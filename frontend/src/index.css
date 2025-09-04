@@ -1,0 +1,19 @@
+﻿@import "tailwindcss";
+@source "./**/*.{html,js,jsx,ts,tsx}";
+
+@layer base {
+  html, body { @apply text-slate-800; }
+}
+
+@layer utilities {
+  .card  { @apply bg-white/80 backdrop-blur border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow; }
+  .input { @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-400; }
+  .toolbar-icon { @apply w-10 h-10 grid place-items-center rounded-full hover:bg-slate-100 transition; }
+}
+
+.bg-app {
+  background:
+    radial-gradient(1000px 420px at 0% 0%, #dcfce7 0%, transparent 35%),
+    radial-gradient(1200px 460px at 100% 0%, #bfdbfe 0%, transparent 35%),
+    #F8FAFC;
+}
