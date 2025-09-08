@@ -1,245 +1,261 @@
-﻿PRAGMA foreign_keys = ON;
+﻿﻿-- Kích hoạt kiểm tra khóa ngoại
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- =========================
--- 1) Users & Roles
--- =========================
+-- 1) Bảng người dùng và vai trò
+-- ========================
+
+-- Xóa bảng cũ nếu có (để tránh trùng lỗi khi khởi tạo lại DB)
+DROP TABLE IF EXISTS users;
+
 CREATE TABLE IF NOT EXISTS users (
-  id            TEXT PRIMARY KEY,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  name          TEXT DEFAULT '',
-  phone         TEXT,
-  avatar_url    TEXT,
-  role          TEXT NOT NULL DEFAULT 'user',           -- user | donor | receiver | shipper | admin
-  status        TEXT NOT NULL DEFAULT 'active',         -- active | banned | deleted
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+  id            CHAR(36) PRIMARY KEY,                  
+  email         VARCHAR(255) NOT NULL UNIQUE,          
+  password_hash TEXT NOT NULL,                         
+  name          VARCHAR(255) DEFAULT '',               
+  avatar_url    TEXT,                                  
+  phone         VARCHAR(20),                           
+  role          ENUM('user', 'donor', 'receiver', 'shipper', 'admin') NOT NULL DEFAULT 'user',
+  status        ENUM('active', 'banned', 'deleted') NOT NULL DEFAULT 'active',
+  address       TEXT,                                  
+  lat           DECIMAL(10,8),                         
+  lng           DECIMAL(11,8),                         
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,   
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP 
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_email ON users(email);
 
--- Optional: phân quyền chi tiết cho tương lai
+-- Bảng này lưu trữ các vai trò bổ sung nếu cần (một người dùng có thể có nhiều vai trò)
 CREATE TABLE IF NOT EXISTS user_roles (
-  user_id  TEXT NOT NULL,
-  role     TEXT NOT NULL,                               -- extra roles: donor/receiver/shipper
+  user_id  CHAR(36) NOT NULL,
+  role     VARCHAR(50) NOT NULL,                      -- Vai trò bổ sung
   PRIMARY KEY (user_id, role),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 2) Tags / Dietary labels
+-- 2) Tags / Nhãn chế độ ăn
 -- =========================
 CREATE TABLE IF NOT EXISTS tags (
-  id   INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug TEXT NOT NULL UNIQUE,                            -- vd: "chay", "khong-lactose"
-  name TEXT NOT NULL
-);
+  id   INT AUTO_INCREMENT PRIMARY KEY,                -- ID tự tăng
+  slug VARCHAR(100) NOT NULL UNIQUE,                  -- Slug cho tag (vd: "chay", "khong-lactose")
+  name VARCHAR(255) NOT NULL                          -- Tên hiển thị của tag
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Bảng lưu trữ tùy chọn của người dùng
 CREATE TABLE IF NOT EXISTS user_preferences (
-  user_id     TEXT NOT NULL PRIMARY KEY,
-  diet_tags   TEXT DEFAULT '[]',                        -- JSON array string of tag slugs
-  radius_km   REAL DEFAULT 10,                          -- bán kính đề xuất
-  notif_email INTEGER DEFAULT 1,
-  notif_push  INTEGER DEFAULT 1,
+  user_id      CHAR(36) PRIMARY KEY,                  -- Khóa ngoại đến users
+  diet_tags    TEXT DEFAULT '[]',                     -- Mảng JSON các tag chế độ ăn
+  radius_km    FLOAT DEFAULT 10,                      -- Bán kính đề xuất (km)
+  notif_email  TINYINT DEFAULT 1,                     -- Nhận thông báo email
+  notif_push   TINYINT DEFAULT 1,                     -- Nhận thông báo push
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 3) Pickup points (điểm nhận)
+-- 3) Điểm nhận đồ ăn
 -- =========================
 CREATE TABLE IF NOT EXISTS pickup_points (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  address     TEXT,
-  lat         REAL,    -- WGS84
-  lng         REAL,
-  opening     TEXT,    -- JSON giờ mở cửa
-  status      TEXT DEFAULT 'active'   -- active | inactive
-);
+  id      CHAR(36) PRIMARY KEY,                       -- UUID cho điểm nhận
+  name    VARCHAR(255) NOT NULL,                      -- Tên điểm nhận
+  address TEXT,                                       -- Địa chỉ đầy đủ
+  lat     DECIMAL(10, 8),                             -- Vĩ độ
+  lng     DECIMAL(11, 8),                             -- Kinh độ
+  opening TEXT,                                       -- Giờ mở cửa (JSON)
+  status  ENUM('active', 'inactive') DEFAULT 'active' -- Trạng thái
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 4) Food items & bundles
+-- 4) Món ăn và gói đồ ăn
 -- =========================
 CREATE TABLE IF NOT EXISTS food_items (
-  id            TEXT PRIMARY KEY,
-  owner_id      TEXT NOT NULL,                          -- users.id (donor)
-  title         TEXT NOT NULL,
-  description   TEXT,
-  qty           INTEGER NOT NULL DEFAULT 1,             -- số suất
-  unit          TEXT DEFAULT 'suat',
-  expire_at     DATETIME,                               -- hạn dùng
-  location_addr TEXT,
-  lat           REAL,
-  lng           REAL,
-  tags          TEXT DEFAULT '[]',                      -- JSON tag slugs (chay, ko-gluten...)
-  images        TEXT DEFAULT '[]',                      -- JSON URLs
-  status        TEXT NOT NULL DEFAULT 'available',      -- available | reserved | given | expired | hidden
-  visibility    TEXT NOT NULL DEFAULT 'public',         -- public | private
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id            CHAR(36) PRIMARY KEY,                 -- UUID cho món ăn
+  owner_id      CHAR(36) NOT NULL,                    -- Người tạo (người quyên góp)
+  title         VARCHAR(255) NOT NULL,                -- Tiêu đề món ăn
+  description   TEXT,                                 -- Mô tả chi tiết
+  qty           INT NOT NULL DEFAULT 1,               -- Số suất
+  unit          VARCHAR(50) DEFAULT 'suat',           -- Đơn vị tính
+  expire_at     DATETIME,                             -- Hạn sử dụng
+  location_addr TEXT,                                 -- Địa chỉ lấy đồ
+  lat           DECIMAL(10, 8),                       -- Vĩ độ
+  lng           DECIMAL(11, 8),                       -- Kinh độ
+  tags          TEXT DEFAULT '[]',                    -- Mảng JSON các tag
+  images        TEXT DEFAULT '[]',                    -- Mảng JSON URLs hình ảnh
+  status        ENUM('available', 'reserved', 'given', 'expired', 'hidden') NOT NULL DEFAULT 'available', -- Trạng thái
+  visibility    ENUM('public', 'private') NOT NULL DEFAULT 'public', -- Hiển thị
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Thời gian tạo
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Thời gian cập nhật
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_food_status ON food_items(status);
-CREATE INDEX IF NOT EXISTS idx_food_owner  ON food_items(owner_id);
-CREATE INDEX IF NOT EXISTS idx_food_geo    ON food_items(lat, lng);
+CREATE INDEX idx_food_status ON food_items(status);
+CREATE INDEX idx_food_owner ON food_items(owner_id);
+CREATE INDEX idx_food_geo ON food_items(lat, lng);
 
--- Bundle (gộp nhiều món thành bữa)
+-- Bảng gói đồ ăn (gộp nhiều món)
 CREATE TABLE IF NOT EXISTS bundles (
-  id          TEXT PRIMARY KEY,
-  owner_id    TEXT NOT NULL,
-  title       TEXT NOT NULL,
-  description TEXT,
-  cover       TEXT,
-  tags        TEXT DEFAULT '[]',
-  status      TEXT DEFAULT 'active',                    -- active | closed
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id          CHAR(36) PRIMARY KEY,                   -- UUID cho gói
+  owner_id    CHAR(36) NOT NULL,                      -- Người tạo gói
+  title       VARCHAR(255) NOT NULL,                  -- Tiêu đề gói
+  description TEXT,                                   -- Mô tả
+  cover       TEXT,                                   -- URL ảnh cover
+  tags        TEXT DEFAULT '[]',                      -- Mảng JSON các tag
+  status      ENUM('active', 'closed') DEFAULT 'active', -- Trạng thái
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,    -- Thời gian tạo
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Bảng liên kết gói và món ăn
 CREATE TABLE IF NOT EXISTS bundle_items (
-  bundle_id TEXT NOT NULL,
-  item_id   TEXT NOT NULL,
+  bundle_id CHAR(36) NOT NULL,
+  item_id   CHAR(36) NOT NULL,
   PRIMARY KEY (bundle_id, item_id),
   FOREIGN KEY (bundle_id) REFERENCES bundles(id) ON DELETE CASCADE,
-  FOREIGN KEY (item_id)   REFERENCES food_items(id) ON DELETE CASCADE
-);
+  FOREIGN KEY (item_id) REFERENCES food_items(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 5) Booking (đặt nhận)
+-- 5) Đặt đồ ăn
 -- =========================
 CREATE TABLE IF NOT EXISTS bookings (
-  id            TEXT PRIMARY KEY,
-  item_id       TEXT,                                   -- đặt đơn món
-  bundle_id     TEXT,                                   -- hoặc đặt bundle
-  receiver_id   TEXT NOT NULL,                          -- users.id
-  qty           INTEGER NOT NULL DEFAULT 1,
-  note          TEXT,
-  method        TEXT DEFAULT 'pickup',                  -- pickup | meet | delivery
-  pickup_point  TEXT,                                   -- pickup_points.id (nullable)
-  status        TEXT NOT NULL DEFAULT 'pending',        -- pending | accepted | rejected | cancelled | completed | expired
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at    DATETIME,
-  UNIQUE(item_id, receiver_id) ON CONFLICT IGNORE,
-  FOREIGN KEY (item_id)     REFERENCES food_items(id) ON DELETE SET NULL,
-  FOREIGN KEY (bundle_id)   REFERENCES bundles(id) ON DELETE SET NULL,
+  id           CHAR(36) PRIMARY KEY,                  -- UUID cho booking
+  item_id      CHAR(36),                              -- ID món ăn (nếu đặt món riêng)
+  bundle_id    CHAR(36),                              -- ID gói (nếu đặt cả gói)
+  receiver_id  CHAR(36) NOT NULL,                     -- Người nhận
+  qty          INT NOT NULL DEFAULT 1,                -- Số lượng
+  note         TEXT,                                  -- Ghi chú
+  method       ENUM('pickup', 'meet', 'delivery') DEFAULT 'pickup', -- Phương thức nhận
+  pickup_point CHAR(36),                              -- Điểm nhận (nếu có)
+  status       ENUM('pending', 'accepted', 'rejected', 'cancelled', 'completed', 'expired') NOT NULL DEFAULT 'pending', -- Trạng thái
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,   -- Thời gian tạo
+  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Thời gian cập nhật
+  UNIQUE KEY unique_booking (item_id, receiver_id),   -- Mỗi người chỉ đặt 1 món 1 lần
+  FOREIGN KEY (item_id) REFERENCES food_items(id) ON DELETE SET NULL,
+  FOREIGN KEY (bundle_id) REFERENCES bundles(id) ON DELETE SET NULL,
   FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (pickup_point) REFERENCES pickup_points(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_booking_status ON bookings(status);
-CREATE INDEX IF NOT EXISTS idx_booking_receiver ON bookings(receiver_id);
+CREATE INDEX idx_booking_status ON bookings(status);
+CREATE INDEX idx_booking_receiver ON bookings(receiver_id);
 
 -- =========================
--- 6) Payment (phí 2k/bữa)
+-- 6) Thanh toán (phí 2k/bữa)
 -- =========================
 CREATE TABLE IF NOT EXISTS payments (
-  id           TEXT PRIMARY KEY,
-  booking_id   TEXT NOT NULL,
-  payer_id     TEXT NOT NULL,                           -- users.id (receiver)
-  amount       INTEGER NOT NULL,                        -- VND
-  provider     TEXT,                                    -- momo | vnpay | zalopay
-  provider_txn TEXT,                                    -- mã giao dịch cổng
-  status       TEXT NOT NULL DEFAULT 'pending',         -- pending | paid | failed | refunded
-  meta         TEXT DEFAULT '{}',                       -- JSON
-  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id          CHAR(36) PRIMARY KEY,                   -- UUID cho payment
+  booking_id  CHAR(36) NOT NULL,                      -- Booking liên quan
+  payer_id    CHAR(36) NOT NULL,                      -- Người thanh toán
+  amount      INT NOT NULL,                           -- Số tiền (VND)
+  provider    ENUM('momo', 'vnpay', 'zalopay'),       -- Cổng thanh toán
+  provider_txn VARCHAR(255),                          -- Mã giao dịch từ cổng
+  status      ENUM('pending', 'paid', 'failed', 'refunded') NOT NULL DEFAULT 'pending', -- Trạng thái
+  meta        TEXT DEFAULT '{}',                      -- Dữ liệu bổ sung (JSON)
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,    -- Thời gian tạo
   FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
-  FOREIGN KEY (payer_id)   REFERENCES users(id) ON DELETE CASCADE
-);
+  FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_pay_status ON payments(status);
+CREATE INDEX idx_pay_status ON payments(status);
 
 -- =========================
--- 7) Delivery / Shipper (tình nguyện)
+-- 7) Giao hàng / Tình nguyện viên
 -- =========================
 CREATE TABLE IF NOT EXISTS deliveries (
-  id            TEXT PRIMARY KEY,
-  booking_id    TEXT NOT NULL,
-  shipper_id    TEXT NOT NULL,                          -- users.id
-  status        TEXT NOT NULL DEFAULT 'assigned',       -- assigned | picking | delivering | delivered | failed | cancelled
-  otp_code      TEXT,                                   -- xác nhận bàn giao
-  proof_images  TEXT DEFAULT '[]',                      -- JSON URLs
-  route_geojson TEXT,                                   -- lộ trình (JSON)
-  updated_at    DATETIME,
-  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id            CHAR(36) PRIMARY KEY,                 -- UUID cho delivery
+  booking_id    CHAR(36) NOT NULL,                    -- Booking liên quan
+  shipper_id    CHAR(36) NOT NULL,                    -- Người giao hàng
+  status        ENUM('assigned', 'picking', 'delivering', 'delivered', 'failed', 'cancelled') NOT NULL DEFAULT 'assigned', -- Trạng thái
+  otp_code      VARCHAR(10),                          -- Mã OTP xác nhận
+  proof_images  TEXT DEFAULT '[]',                    -- Mảng JSON URLs hình ảnh làm bằng chứng
+  route_geojson TEXT,                                 -- Dữ liệu lộ trình (GeoJSON)
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Thời gian tạo
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Thời gian cập nhật
   FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
   FOREIGN KEY (shipper_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_delivery_status ON deliveries(status);
-CREATE INDEX IF NOT EXISTS idx_delivery_shipper ON deliveries(shipper_id);
+CREATE INDEX idx_delivery_status ON deliveries(status);
+CREATE INDEX idx_delivery_shipper ON deliveries(shipper_id);
 
 -- =========================
--- 8) Reports / Complaints (báo cáo vi phạm, đồ ăn không an toàn)
+-- 8) Báo cáo / Khiếu nại
 -- =========================
 CREATE TABLE IF NOT EXISTS reports (
-  id          TEXT PRIMARY KEY,
-  reporter_id TEXT NOT NULL,
-  target_type TEXT NOT NULL,                            -- item | user | booking | bundle
-  target_id   TEXT NOT NULL,
-  reason      TEXT NOT NULL,
-  status      TEXT DEFAULT 'open',                      -- open | reviewing | resolved | rejected
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id          CHAR(36) PRIMARY KEY,                   -- UUID cho report
+  reporter_id CHAR(36) NOT NULL,                      -- Người báo cáo
+  target_type ENUM('item', 'user', 'booking', 'bundle') NOT NULL, -- Loại đối tượng
+  target_id   CHAR(36) NOT NULL,                      -- ID đối tượng
+  reason      TEXT NOT NULL,                          -- Lý do báo cáo
+  status      ENUM('open', 'reviewing', 'resolved', 'rejected') DEFAULT 'open', -- Trạng thái
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,    -- Thời gian tạo
   FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 9) Notifications
+-- 9) Thông báo
 -- =========================
 CREATE TABLE IF NOT EXISTS notifications (
-  id          TEXT PRIMARY KEY,
-  user_id     TEXT NOT NULL,
-  type        TEXT NOT NULL,                            -- booking_update | delivery_update | system | payment_update
-  title       TEXT NOT NULL,
-  body        TEXT,
-  seen        INTEGER DEFAULT 0,
-  data        TEXT DEFAULT '{}',                        -- JSON payload
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id         CHAR(36) PRIMARY KEY,                    -- UUID cho notification
+  user_id    CHAR(36) NOT NULL,                       -- Người nhận
+  type       ENUM('booking_update', 'delivery_update', 'system', 'payment_update') NOT NULL, -- Loại thông báo
+  title      VARCHAR(255) NOT NULL,                   -- Tiêu đề
+  body       TEXT,                                    -- Nội dung
+  seen       TINYINT DEFAULT 0,                       -- Đã xem hay chưa
+  data       TEXT DEFAULT '{}',                       -- Dữ liệu bổ sung (JSON)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- Thời gian tạo
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+CREATE INDEX idx_notif_user ON notifications(user_id);
 
 -- =========================
--- 10) App settings / RBAC / Audit
+-- 10) Cài đặt ứng dụng / Nhật ký
 -- =========================
 CREATE TABLE IF NOT EXISTS app_settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL                                  -- JSON string
-);
+  key   VARCHAR(100) PRIMARY KEY,                     -- Khóa cài đặt
+  value TEXT NOT NULL                                 -- Giá trị (JSON)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
-  id         TEXT PRIMARY KEY,
-  user_id    TEXT,
-  action     TEXT NOT NULL,                            -- ex: "booking.create"
-  entity     TEXT,                                     -- ex: "bookings"
-  entity_id  TEXT,
-  ip         TEXT,
-  ua         TEXT,
-  meta       TEXT DEFAULT '{}',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  id         CHAR(36) PRIMARY KEY,                    -- UUID cho log
+  user_id    CHAR(36),                                -- Người dùng liên quan
+  action     VARCHAR(100) NOT NULL,                   -- Hành động (vd: "booking.create")
+  entity     VARCHAR(50),                             -- Thực thể (vd: "bookings")
+  entity_id  CHAR(36),                                -- ID thực thể
+  ip         VARCHAR(45),                             -- Địa chỉ IP
+  ua         TEXT,                                    -- User-Agent
+  meta       TEXT DEFAULT '{}',                       -- Dữ liệu bổ sung (JSON)
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- Thời gian tạo
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =========================
--- 11) Analytics (tối giản)
+-- 11) Phân tích / Thống kê
 -- =========================
 CREATE TABLE IF NOT EXISTS metrics_daily (
-  day        TEXT PRIMARY KEY,                         -- YYYY-MM-DD
-  items      INTEGER DEFAULT 0,
-  bookings   INTEGER DEFAULT 0,
-  deliveries INTEGER DEFAULT 0,
-  rescued_meals INTEGER DEFAULT 0,                     -- tổng số bữa cứu được
-  fee_revenue  INTEGER DEFAULT 0                       -- tổng phí 2k thu được
-);
--- campaigns
-CREATE TABLE IF NOT EXISTS campaigns(
-  id           CHAR(36) PRIMARY KEY,
-  title        VARCHAR(255) NOT NULL,
-  location     VARCHAR(255) DEFAULT "",
-  goal         INTEGER NOT NULL DEFAULT 0,
-  raised       INTEGER NOT NULL DEFAULT 0,
-  supporters   INTEGER NOT NULL DEFAULT 0,
-  tags         TEXT DEFAULT "[]",
-  cover        VARCHAR(500) DEFAULT "",
-  status       ENUM("active","closed") DEFAULT "active",
-  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  day           DATE PRIMARY KEY,                     -- Ngày (YYYY-MM-DD)
+  items         INT DEFAULT 0,                        -- Số món ăn
+  bookings      INT DEFAULT 0,                        -- Số booking
+  deliveries    INT DEFAULT 0,                        -- Số giao hàng
+  rescued_meals INT DEFAULT 0,                        -- Tổng số bữa cứu được
+  fee_revenue   INT DEFAULT 0                         -- Tổng phí thu được
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =========================
+-- 12) Chiến dịch
+-- =========================
+CREATE TABLE IF NOT EXISTS campaigns (
+  id          CHAR(36) PRIMARY KEY,                   -- UUID cho campaign
+  title       VARCHAR(255) NOT NULL,                  -- Tiêu đề chiến dịch
+  location    VARCHAR(255) DEFAULT "",                -- Địa điểm
+  goal        INT NOT NULL DEFAULT 0,                 -- Mục tiêu
+  raised      INT NOT NULL DEFAULT 0,                 -- Số tiền đã quyên góp
+  supporters  INT NOT NULL DEFAULT 0,                 -- Số người ủng hộ
+  tags        TEXT DEFAULT "[]",                      -- Mảng JSON các tag
+  cover       VARCHAR(500) DEFAULT "",                -- URL ảnh cover
+  status      ENUM('active', 'closed') DEFAULT 'active', -- Trạng thái
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP     -- Thời gian tạo
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -5,40 +5,45 @@ import { useNavigate } from "react-router-dom";
 
 const Ctx = createContext(null);
 
-export function AuthProvider({ children }){
+export function AuthProvider({ children }) {
   const t = useToast();
   const nav = useNavigate();
   const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(false); // true khi đã kiểm tra token xong
 
-  // load user từ token
+  // Load user từ token khi app khởi động / F5
   useEffect(() => {
     (async () => {
       try {
-        const me = await apiGet("/api/auth/me");
-        setUser(me);
-      } catch {} finally {
+        const res = await apiGet("/api/auth/me"); // res = { user: {...} }
+        setUser(res?.user ?? null);               // ✅ LẤY res.user
+      } catch {
+        setUser(null);                             // token không hợp lệ
+      } finally {
         setReady(true);
       }
     })();
   }, []);
 
-  async function signIn(email, password, remember=false){
-    const data = await apiPost("/api/auth/login", { email, password });
+  // Đăng nhập
+  async function signIn(email, password, remember = false) {
+    const data = await apiPost("/api/auth/login", { email, password, remember });
     (remember ? localStorage : sessionStorage).setItem("bua_token", data.token);
-    setUser(data.user);
+    setUser(data.user);                            // ✅ user là object thực
     t.success("Đăng nhập thành công");
     nav("/");
     return data;
   }
 
-  async function signUp(payload){
-    await apiPost("/api/auth/register", payload);
+  // Đăng ký
+  async function signUp({ name, email, address, password }) {
+    await apiPost("/api/auth/register", { name, email, address, password });
     t.success("Đăng ký thành công, hãy đăng nhập!");
     nav("/login");
   }
 
-  function signOut(){
+  // Đăng xuất
+  function signOut() {
     localStorage.removeItem("bua_token");
     sessionStorage.removeItem("bua_token");
     setUser(null);
@@ -46,7 +51,13 @@ export function AuthProvider({ children }){
     nav("/login");
   }
 
-  return <Ctx.Provider value={{ user, setUser, ready, signIn, signUp, signOut }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ user, setUser, ready, signIn, signUp, signOut, register: signUp }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
-export function useAuth(){ return useContext(Ctx); }
+export function useAuth() {
+  return useContext(Ctx);
+}

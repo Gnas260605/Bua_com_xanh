@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Layout from "./components/layout/Layout";
 
-// Pages (có thể đổi sang React.lazy nếu muốn tách bundle)
+// App pages
 import Overview from "./pages/Overview";
 import Campaigns from "./pages/Campaigns";
 import Donors from "./pages/Donors";
@@ -12,15 +12,24 @@ import Shippers from "./pages/Shippers";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 
+// Auth pages
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyOtp from "./pages/VerifyOtp";
 import ResetPassword from "./pages/ResetPassword";
 
+// Admin
+import RequireAdmin from "./auth/RequireAdmin";
+import AdminLayout from "./admin/AdminLayout";
+import AdminDashboard from "./admin/AdminDashboard";
+import AdminUsers from "./admin/AdminUsers";
+import AdminPlaceholder from "./admin/AdminPlaceholder";
+
 import { useAuth } from "./auth/AuthContext";
 
-/** Loader nhỏ gọn khi lazy/Suspense */
+/* ---------- Small utilities ---------- */
+
 function Loader() {
   return (
     <div className="w-full py-16 flex items-center justify-center text-slate-500">
@@ -29,17 +38,14 @@ function Loader() {
   );
 }
 
-/** Cuộn lên đầu khi đổi route */
 function ScrollToTop() {
   const location = useLocation();
   React.useEffect(() => {
-    // dùng instant để tránh hiệu ứng giật
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [location.pathname, location.search, location.hash]);
   return null;
 }
 
-/** ErrorBoundary đơn giản cho các lỗi runtime trong cây con */
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -49,7 +55,6 @@ class ErrorBoundary extends React.Component {
     return { hasError: true, message: err?.message || "Đã xảy ra lỗi." };
   }
   componentDidCatch(error, info) {
-    // Có thể log ra Sentry/Console
     console.error("App ErrorBoundary:", error, info);
   }
   render() {
@@ -65,7 +70,8 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/** Route bảo vệ: nếu chưa login thì điều hướng tới /login và nhớ `from` */
+/* ---------- Route guards ---------- */
+
 function Protected({ children }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -75,7 +81,6 @@ function Protected({ children }) {
   return children;
 }
 
-/** Chỉ cho khách (chưa login) vào các trang login/register/forgot */
 function PublicOnly({ children }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -86,6 +91,8 @@ function PublicOnly({ children }) {
   return children;
 }
 
+/* ---------- App Routes ---------- */
+
 export default function App() {
   return (
     <>
@@ -93,7 +100,7 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<Loader />}>
           <Routes>
-            {/* Public routes */}
+            {/* Public (guest-only) */}
             <Route
               path="/login"
               element={
@@ -135,7 +142,7 @@ export default function App() {
               }
             />
 
-            {/* Protected layout + nested routes */}
+            {/* Protected user area */}
             <Route
               element={
                 <Protected>
@@ -143,10 +150,7 @@ export default function App() {
                 </Protected>
               }
             >
-              {/* "/" == Overview */}
               <Route index element={<Overview />} />
-
-              {/* Các trang con */}
               <Route path="campaigns" element={<Campaigns />} />
               <Route path="donors" element={<Donors />} />
               <Route path="recipients" element={<Recipients />} />
@@ -155,7 +159,28 @@ export default function App() {
               <Route path="settings" element={<Settings />} />
             </Route>
 
-            {/* 404 → về trang chủ */}
+            {/* Admin area (requires login + admin role) */}
+            <Route
+              path="/admin"
+              element={
+                <Protected>
+                  <RequireAdmin>
+                    <AdminLayout />
+                  </RequireAdmin>
+                </Protected>
+              }
+            >
+              <Route index element={<AdminDashboard />} />
+              <Route path="users" element={<AdminUsers />} />
+              <Route path="foods" element={<AdminPlaceholder title="Foods Moderation" />} />
+              <Route path="campaigns" element={<AdminPlaceholder title="Campaigns" />} />
+              <Route path="payments" element={<AdminPlaceholder title="Payments" />} />
+              <Route path="settings" element={<AdminPlaceholder title="Site Settings" />} />
+              <Route path="announcements" element={<AdminPlaceholder title="Announcements" />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Route>
+
+            {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
