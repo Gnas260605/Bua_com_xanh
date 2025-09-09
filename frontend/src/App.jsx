@@ -26,6 +26,16 @@ import AdminDashboard from "./admin/AdminDashboard";
 import AdminUsers from "./admin/AdminUsers";
 import AdminPlaceholder from "./admin/AdminPlaceholder";
 
+// Admin pages bổ sung
+import AdminCampaigns from "./admin/AdminCampaigns";
+import AdminBookings from "./admin/AdminBookings";
+import AdminDeliveries from "./admin/AdminDeliveries";
+import AdminPickupPoints from "./admin/AdminPickupPoints";
+import AdminPages from "./admin/AdminPages";
+import AdminAnnouncements from "./admin/AdminAnnouncements";
+import AdminPayments from "./admin/AdminPayments";
+import AdminAudit from "./admin/AdminAudit";
+
 import { useAuth } from "./auth/AuthContext";
 
 /* ---------- Small utilities ---------- */
@@ -170,13 +180,27 @@ export default function App() {
                 </Protected>
               }
             >
+              {/* Dashboard */}
               <Route index element={<AdminDashboard />} />
+
+              {/* Quản trị */}
               <Route path="users" element={<AdminUsers />} />
               <Route path="foods" element={<AdminPlaceholder title="Foods Moderation" />} />
-              <Route path="campaigns" element={<AdminPlaceholder title="Campaigns" />} />
-              <Route path="payments" element={<AdminPlaceholder title="Payments" />} />
+              <Route path="bookings" element={<AdminBookings />} />
+              <Route path="deliveries" element={<AdminDeliveries />} />
+
+              {/* Chiến dịch & CMS */}
+              <Route path="campaigns" element={<AdminCampaigns />} />
+              <Route path="pickup-points" element={<AdminPickupPoints />} />
+              <Route path="pages" element={<AdminPages />} />
+
+              {/* Tài chính & Hệ thống */}
+              <Route path="payments" element={<AdminPayments />} />
+              <Route path="announcements" element={<AdminAnnouncements />} />
+              <Route path="audit" element={<AdminAudit />} />
               <Route path="settings" element={<AdminPlaceholder title="Site Settings" />} />
-              <Route path="announcements" element={<AdminPlaceholder title="Announcements" />} />
+
+              {/* Fallback */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Route>
 

@@ -4,145 +4,189 @@ import Card from "../components/ui/Card";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Empty from "../components/ui/Empty";
-import { Search, Tag, MapPin, Target, Timer, SlidersHorizontal, AlertTriangle } from "lucide-react";
-import { useAuth } from "../auth/AuthContext";
+import {
+  Users, Soup, HandHeart, Megaphone, ArrowRight, MapPin, Calendar, Target, Timer, AlertTriangle
+} from "lucide-react";
 
-/* ======= Small pieces ======= */
-function Stat({ label, value }) {
+/* =========================
+   Small bits
+========================= */
+function StatChip({ icon: Icon, label, value }) {
   return (
-    <Card className="p-4">
-      <div className="text-slate-500 text-sm">{label}</div>
-      <div className="text-3xl font-bold">{value}</div>
-    </Card>
+    <div className="flex items-center gap-3 px-4 py-2 rounded-xl border bg-white shadow-sm">
+      <div className="p-2 rounded-lg bg-emerald-50">
+        <Icon size={18} className="text-emerald-600" />
+      </div>
+      <div>
+        <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+        <div className="text-lg font-semibold">{value}</div>
+      </div>
+    </div>
   );
 }
 
-function FoodCard({ item }) {
+function FeaturedCard({ c }) {
   const cover =
-    item.images?.[0] ||
-    "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=800&auto=format&fit=crop";
-
-  // các field do API recommendation trả về thêm (mềm dẻo, không bắt buộc)
-  const km = typeof item.distance_km === "number" ? item.distance_km : null;
-  const score = typeof item.reco_score === "number" ? Math.round(item.reco_score) : null;
-  const hoursLeft =
-    item.expire_at ? Math.max(0, Math.ceil((new Date(item.expire_at) - new Date()) / (1000 * 60 * 60))) : null;
-  const dietMatch = item.diet_match === true;
+    c.cover && c.cover.length > 4
+      ? c.cover
+      : "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=1200&auto=format&fit=crop";
+  const pct = Math.min(100, Math.round((c.raised / (c.goal || 1)) * 100));
 
   return (
-    <Card className="overflow-hidden">
-      <img src={cover} alt="" className="h-40 w-full object-cover" />
-      <div className="p-4 space-y-2">
-        <div className="font-semibold line-clamp-1">{item.title}</div>
-        <div className="text-sm text-slate-600 line-clamp-2">{item.description}</div>
-        <div className="text-sm">
-          Còn <b>{item.qty}</b> {item.unit}
-          {item.expire_at ? <> • HSD {new Date(item.expire_at).toLocaleString("vi-VN")}</> : null}
+    <Card className="overflow-hidden group hover:shadow-lg transition">
+      <div className="relative">
+        <img src={cover} alt="" className="h-40 w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/0 to-transparent opacity-0 group-hover:opacity-100 transition" />
+        {c.location ? (
+          <span className="absolute top-3 left-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+            <MapPin size={12} /> {c.location}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="p-4 space-y-3">
+        <div className="font-semibold line-clamp-1">{c.title || "Chiến dịch"}</div>
+        <div className="text-sm text-slate-600 line-clamp-2">{c.description || "—"}</div>
+
+        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="text-xs text-slate-600 flex items-center justify-between">
+          <span>
+            Gây quỹ: <b>{(c.raised ?? 0).toLocaleString("vi-VN")}đ</b> / {(c.goal ?? 0).toLocaleString("vi-VN")}đ
+          </span>
+          {c.deadline ? (
+            <span className="flex items-center gap-1">
+              <Calendar size={12} /> {new Date(c.deadline).toLocaleDateString("vi-VN")}
+            </span>
+          ) : null}
         </div>
 
-        <div className="flex gap-2 flex-wrap items-center">
-          {(item.tags || []).slice(0, 4).map((t) => (
+        <div className="flex items-center gap-2 flex-wrap">
+          {(c.tags || []).slice(0, 3).map((t) => (
             <Badge key={t}>#{t}</Badge>
           ))}
-          {dietMatch ? <Badge intent="success">Phù hợp chế độ ăn</Badge> : null}
-          {km !== null ? (
-            <Badge><MapPin size={12} className="-ml-0.5 mr-1" /> {km.toFixed(1)} km</Badge>
-          ) : null}
-          {hoursLeft !== null ? (
-            <Badge intent={hoursLeft <= 12 ? "warning" : "default"}>
-              <Timer size={12} className="-ml-0.5 mr-1" /> còn ~{hoursLeft}h
+          {typeof c.impact_meals === "number" ? (
+            <Badge intent="primary" className="ml-auto">
+              <Soup size={12} className="-ml-0.5 mr-1" />
+              {c.impact_meals.toLocaleString("vi-VN")} bữa
             </Badge>
           ) : null}
-          {score !== null ? (
-            <Badge intent="primary"><Target size={12} className="-ml-0.5 mr-1" /> score {score}</Badge>
-          ) : null}
-        </div>
-
-        <div className="text-xs text-slate-500">
-          {item.location_addr ? <>Địa điểm: {item.location_addr}</> : null}
         </div>
       </div>
     </Card>
   );
 }
 
-/* ======= Main Page ======= */
+/* =========================
+   Count-up hook (mượt)
+========================= */
+function useCountUp(target = 0, durationMs = 1200) {
+  const [val, setVal] = useState(0);
+  const rafRef = useRef(0);
+  const startRef = useRef(0);
+  const fromRef = useRef(0);
+
+  useEffect(() => {
+    cancelAnimationFrame(rafRef.current);
+    startRef.current = 0;
+    fromRef.current = val;
+
+    const animate = (ts) => {
+      if (!startRef.current) startRef.current = ts;
+      const p = Math.min(1, (ts - startRef.current) / durationMs);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      const next = Math.round(fromRef.current + (target - fromRef.current) * eased);
+      setVal(next);
+      if (p < 1) rafRef.current = requestAnimationFrame(animate);
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
+
+  return val;
+}
+
+/* =========================
+   Overview for USER (with Recommendation)
+========================= */
 export default function Overview() {
-  const { user } = useAuth();
-
-  // --- Overview stats
   const [stats, setStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
-  // --- Catalog (search/browse)
-  const [q, setQ] = useState("");
-  const [tag, setTag] = useState("");
-  const [page, setPage] = useState(1);
-  const [foods, setFoods] = useState({ items: [], total: 0, page: 1, pageSize: 9 });
-  const [loadingFoods, setLoadingFoods] = useState(true);
+  const [featured, setFeatured] = useState({ items: [], total: 0 });
+  const [loadingFeat, setLoadingFeat] = useState(true);
 
-  // --- Recommendation
+  // === Recommendation state (04/05/06) ===
   const [latlng, setLatlng] = useState({ lat: null, lng: null });
   const [maxKm, setMaxKm] = useState(5);
-  const [dietPref, setDietPref] = useState("any"); // any | chay | kythit | halal | none
-  const [personalize, setPersonalize] = useState(true); // học từ lịch sử
+  const [dietPref, setDietPref] = useState("any"); // any | chay | halal | kythit | none
+  const [personalize, setPersonalize] = useState(true);
   const [recoSort, setRecoSort] = useState("priority"); // priority | expireSoon | dietMatch
   const [reco, setReco] = useState({ items: [], ok: true, msg: "" });
   const [loadingReco, setLoadingReco] = useState(false);
 
-  // --- Admin config (weights)
-  const isAdmin = user?.role === "admin";
-  const [weights, setWeights] = useState({ distance: 0.4, expiry: 0.3, diet: 0.2, popularity: 0.1 });
-  const [metrics, setMetrics] = useState(null);
-  const [adminErr, setAdminErr] = useState("");
+  // === Pickup (09) ===
+  const [pickup, setPickup] = useState({ ok: true, windows: [], hubs: [], msg: "" });
 
-  // --- debounce search
-  const [qDebounced, setQDebounced] = useState("");
-  const tRef = useRef(null);
+  // Load overview stats (User-facing)
   useEffect(() => {
-    clearTimeout(tRef.current);
-    tRef.current = setTimeout(() => setQDebounced(q.trim()), 300);
-    return () => clearTimeout(tRef.current);
-  }, [q]);
-
-  /* ===== Load overview stats ===== */
-  useEffect(() => {
-    apiGet("/api/overview").then(setStats).catch(() => {});
-  }, []);
-
-  /* ===== Load browse foods ===== */
-  useEffect(() => {
-    setLoadingFoods(true);
-    const qs = new URLSearchParams({
-      q: qDebounced,
-      tag,
-      page,
-      pageSize: 9,
-    }).toString();
-    apiGet(`/api/foods?${qs}`)
-      .then((res) => setFoods(res))
-      .finally(() => setLoadingFoods(false));
-  }, [qDebounced, tag, page]);
-
-  /* ===== Admin: load weights + metrics (nếu có API) ===== */
-  useEffect(() => {
-    if (!isAdmin) return;
     (async () => {
+      setLoadingStats(true);
       try {
-        const conf = await apiGet("/api/reco/config");
-        if (conf?.weights) setWeights((w) => ({ ...w, ...conf.weights }));
+        const s = await apiGet("/api/overview");
+        setStats(s || {});
       } catch {
-        // bỏ qua, có thể chưa làm API
-      }
-      try {
-        const m = await apiGet("/api/reco/metrics");
-        setMetrics(m);
-      } catch {
-        // chưa có metrics cũng không sao
+        setStats({});
+      } finally {
+        setLoadingStats(false);
       }
     })();
-  }, [isAdmin]);
+  }, []);
 
-  /* ===== Recommendation fetcher ===== */
+  // Load featured campaigns
+  useEffect(() => {
+    (async () => {
+      setLoadingFeat(true);
+      try {
+        let res = await apiGet("/api/campaigns?featured=1&pageSize=6");
+        if (!res?.items?.length) {
+          res = await apiGet("/api/campaigns?page=1&pageSize=6");
+        }
+        setFeatured(res || { items: [], total: 0 });
+      } catch {
+        setFeatured({ items: [], total: 0 });
+      } finally {
+        setLoadingFeat(false);
+      }
+    })();
+  }, []);
+
+  // Chuẩn hóa tên trường
+  const mealsGiven = useMemo(() => {
+    const m = stats?.meals_given ?? stats?.meals ?? stats?.distributed_meals ?? 0;
+    return Number.isFinite(m) ? m : 0;
+  }, [stats]);
+
+  const donors = stats?.donors ?? 0;
+  const recipients = stats?.recipients ?? 0;
+  const campaigns = stats?.campaigns ?? stats?.active_campaigns ?? 0;
+
+  const heroCount = useCountUp(mealsGiven, 1200);
+
+  // === Recommendation handlers ===
+  function getLocation() {
+    if (!navigator.geolocation) {
+      alert("Trình duyệt không hỗ trợ định vị.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setLatlng({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => alert("Không lấy được vị trí. Hãy cấp quyền định vị cho trình duyệt.")
+    );
+  }
+
   async function fetchRecommendations() {
     setLoadingReco(true);
     try {
@@ -155,73 +199,71 @@ export default function Overview() {
         sort: recoSort,
         limit: "9",
       }).toString();
-
-      // Kỳ vọng backend: GET /api/reco/foods?lat&lng&maxKm&diet&personalize&sort&limit
       const data = await apiGet(`/api/reco/foods?${qs}`);
       setReco({ items: Array.isArray(data) ? data : [], ok: true, msg: "" });
     } catch (e) {
-      setReco({ items: [], ok: false, msg: "API /api/reco/foods chưa sẵn sàng — đang bỏ qua phần Gợi ý." });
+      setReco({ items: [], ok: false, msg: "Không lấy được gợi ý (API /api/reco/foods)." });
     } finally {
       setLoadingReco(false);
     }
   }
 
-  /* ===== Pickup suggestions (time & waypoint) ===== */
-  const [pickup, setPickup] = useState({ ok: true, windows: [], hubs: [] });
   async function fetchPickup() {
     try {
       if (!latlng.lat || !latlng.lng) {
         setPickup({ ok: false, windows: [], hubs: [], msg: "Chưa có vị trí để gợi ý khung giờ/điểm hẹn." });
         return;
       }
-      // Kỳ vọng backend: GET /api/reco/pickup?lat&lng
       const data = await apiGet(`/api/reco/pickup?lat=${latlng.lat}&lng=${latlng.lng}`);
-      setPickup({
-        ok: true,
-        windows: data?.windows || [],
-        hubs: data?.hubs || [],
-      });
+      setPickup({ ok: true, windows: data?.windows || [], hubs: data?.hubs || [], msg: "" });
     } catch {
-      setPickup({ ok: false, windows: [], hubs: [], msg: "API /api/reco/pickup chưa sẵn sàng." });
+      setPickup({ ok: false, windows: [], hubs: [], msg: "Không lấy được gợi ý điểm hẹn." });
     }
   }
 
-  /* ===== Helpers ===== */
-  const totalPages = Math.max(1, Math.ceil((foods.total || 0) / (foods.pageSize || 9)));
-
-  function getLocation() {
-    if (!navigator.geolocation) {
-      alert("Trình duyệt không hỗ trợ định vị.");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLatlng({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      () => alert("Không lấy được vị trí. Hãy cấp quyền định vị cho trình duyệt.")
-    );
-  }
-
-  /* ===== Render ===== */
   return (
     <>
-      {/* Banner */}
-      <Card className="p-5 mb-5 bg-gradient-to-br from-emerald-50 to-sky-50">
-        <div className="text-lg font-semibold">Kết nối bữa ăn dư thừa tới người cần • An toàn • Minh bạch</div>
-      </Card>
+      {/* ===== HERO: Big number ===== */}
+      <section className="mb-8">
+        <Card className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(1200px_600px_at_-10%_-10%,#34d39920,transparent),radial-gradient(800px_400px_at_110%_10%,#38bdf820,transparent)]" />
+          <div className="relative p-6 md:p-10 flex flex-col lg:flex-row items-start lg:items-center gap-6">
+            <div className="flex-1">
+              <div className="text-sm font-medium text-emerald-700 mb-2 flex items-center gap-2">
+                <HandHeart size={16} /> Cùng nhau giảm lãng phí – lan tỏa yêu thương
+              </div>
+              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
+                Đã kết nối <span className="text-emerald-600">bữa ăn</span> tới cộng đồng
+              </h1>
+              <div className="mt-4 mb-2 text-6xl md:text-7xl font-black leading-none">
+                {loadingStats ? "…" : heroCount.toLocaleString("vi-VN")}
+              </div>
+              <div className="text-slate-600">bữa ăn đã được cho đi</div>
+              <div className="mt-6 flex items-center gap-3">
+                <Button onClick={() => (window.location.href = "/campaigns")}>
+                  Tham gia ủng hộ <ArrowRight size={16} className="ml-1" />
+                </Button>
+                <Button variant="outline" onClick={() => (window.location.href = "/reports")}>
+                  Xem tác động
+                </Button>
+              </div>
+            </div>
 
-      {/* Stats */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <Stat label="Người dùng" value={stats ? stats.users || 0 : "…"} />
-        <Stat label="Nhà hảo tâm" value={stats ? stats.donors || 0 : "…"} />
-        <Stat label="Người nhận" value={stats ? stats.recipients || 0 : "…"} />
-        <Stat label="Chiến dịch" value={stats ? stats.campaigns || 0 : "…"} />
-      </div>
+            {/* Quick stats */}
+            <div className="grid grid-cols-2 gap-3 w-full lg:w-96">
+              <StatChip icon={Users} label="Nhà hảo tâm" value={donors.toLocaleString("vi-VN")} />
+              <StatChip icon={HandHeart} label="Người nhận" value={recipients.toLocaleString("vi-VN")} />
+              <StatChip icon={Megaphone} label="Chiến dịch đang chạy" value={campaigns.toLocaleString("vi-VN")} />
+              <StatChip icon={Soup} label="Tổng bữa tặng" value={mealsGiven.toLocaleString("vi-VN")} />
+            </div>
+          </div>
+        </Card>
+      </section>
 
-      {/* === Recommendation Toolbar === */}
+      {/* ===== Recommendation Toolbar (04/05/06) ===== */}
       <Card className="p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="font-semibold mr-2">Gợi ý (Recommendation)</div>
+          <div className="font-semibold mr-2">Gợi ý cho bạn</div>
 
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={getLocation}>
@@ -229,23 +271,13 @@ export default function Overview() {
               Lấy vị trí
             </Button>
             <div className="text-sm text-slate-600">
-              {latlng.lat ? (
-                <>({latlng.lat.toFixed(4)}, {latlng.lng?.toFixed(4)})</>
-              ) : (
-                <>Chưa có vị trí</>
-              )}
+              {latlng.lat ? <>({latlng.lat.toFixed(4)}, {latlng.lng?.toFixed(4)})</> : <>Chưa có vị trí</>}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">Bán kính</label>
-            <input
-              type="range"
-              min={1}
-              max={20}
-              value={maxKm}
-              onChange={(e) => setMaxKm(Number(e.target.value))}
-            />
+            <input type="range" min={1} max={20} value={maxKm} onChange={(e) => setMaxKm(Number(e.target.value))} />
             <div className="w-10 text-right text-sm">{maxKm}km</div>
           </div>
 
@@ -278,19 +310,14 @@ export default function Overview() {
             { v: "dietMatch", label: "Phù hợp chế độ ăn" },
           ].map((o) => (
             <label key={o.v} className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded-xl border bg-white">
-              <input
-                type="radio"
-                name="recoSort"
-                checked={recoSort === o.v}
-                onChange={() => setRecoSort(o.v)}
-              />
+              <input type="radio" name="recoSort" checked={recoSort === o.v} onChange={() => setRecoSort(o.v)} />
               {o.label}
             </label>
           ))}
         </div>
       </Card>
 
-      {/* === Recommendation Result === */}
+      {/* ===== Recommendation Result ===== */}
       {loadingReco ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -315,7 +342,7 @@ export default function Overview() {
         </>
       ) : null}
 
-      {/* === Pickup windows & hubs === */}
+      {/* ===== Pickup windows & hubs (09) ===== */}
       <Card className="p-4 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Timer size={16} />
@@ -365,165 +392,93 @@ export default function Overview() {
         )}
       </Card>
 
-      {/* === Admin weights & effectiveness === */}
-      {isAdmin && (
-        <Card className="p-4 mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <SlidersHorizontal size={16} />
-            <div className="font-semibold">Admin: Cấu hình trọng số & theo dõi hiệu quả</div>
-          </div>
-
-          {adminErr ? (
-            <div className="text-sm text-red-600 mb-3">{adminErr}</div>
-          ) : null}
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card className="p-3">
-              <div className="text-sm text-slate-600 mb-3">Trọng số tính điểm</div>
-              {[
-                ["distance", "Khoảng cách"],
-                ["expiry", "Gần hết hạn"],
-                ["diet", "Phù hợp chế độ ăn"],
-                ["popularity", "Mức độ phổ biến"],
-              ].map(([k, label]) => (
-                <div key={k} className="flex items-center gap-3 mb-3">
-                  <div className="w-40 text-sm">{label}</div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={Math.round((weights[k] || 0) * 100)}
-                    onChange={(e) =>
-                      setWeights((w) => ({ ...w, [k]: Math.max(0, Math.min(1, Number(e.target.value) / 100)) }))
-                    }
-                  />
-                  <div className="w-10 text-right text-sm">{Math.round((weights[k] || 0) * 100)}%</div>
-                </div>
-              ))}
-              <div className="text-xs text-slate-500">
-                Tổng không cần đúng 100% — backend sẽ chuẩn hoá (normalize) khi tính điểm.
-              </div>
-              <div className="mt-3">
-                <Button
-                  onClick={async () => {
-                    try {
-                      // PATCH /api/reco/config  { weights: { distance, expiry, diet, popularity } }
-                      await fetch("/api/reco/config", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ weights }),
-                        credentials: "include",
-                      });
-                      setAdminErr("");
-                      alert("Đã lưu cấu hình.");
-                    } catch {
-                      setAdminErr("Không lưu được cấu hình (API /api/reco/config?).");
-                    }
-                  }}
-                >
-                  Lưu cấu hình
-                </Button>
-              </div>
-            </Card>
-
-            <Card className="p-3">
-              <div className="text-sm text-slate-600 mb-3">Theo dõi hiệu quả</div>
-              {metrics ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs text-slate-500">CTR gợi ý</div>
-                    <div className="text-xl font-bold">{(metrics.ctr || 0).toFixed(1)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Tỉ lệ nhận thành công</div>
-                    <div className="text-xl font-bold">{(metrics.success_rate || 0).toFixed(1)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Giảm lãng phí (ước tính)</div>
-                    <div className="text-xl font-bold">{(metrics.waste_reduction || 0).toFixed(1)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500">Thời gian giao (tb)</div>
-                    <div className="text-xl font-bold">{metrics.avg_delivery_mins || 0} phút</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-slate-500">Chưa có dữ liệu.</div>
-              )}
-            </Card>
+      {/* ===== Sứ mệnh (ngắn gọn) ===== */}
+      <section className="mb-6">
+        <Card className="p-5 bg-gradient-to-br from-emerald-50 to-sky-50 border-emerald-100">
+          <div className="flex items-start gap-3">
+            <Target size={18} className="mt-0.5 text-emerald-700" />
+            <div>
+              <div className="font-semibold">Sứ mệnh</div>
+              <p className="text-slate-600 text-sm mt-1">
+                Bữa Cơm Xanh kết nối thức ăn còn tốt từ nhà hảo tâm đến người cần, đảm bảo an toàn – minh bạch – kịp thời.
+              </p>
+            </div>
           </div>
         </Card>
-      )}
+      </section>
 
-      {/* === Browse toolbar (giữ tối giản) === */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white w-72 outline-none
-                       focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
-            placeholder="Tìm bữa cơm…"
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-          />
-        </div>
-        <div className="relative">
-          <Tag size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white w-52 outline-none
-                       focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
-            placeholder="Lọc tag…"
-            value={tag}
-            onChange={(e) => {
-              setPage(1);
-              setTag(e.target.value);
-            }}
-          />
-        </div>
-      </div>
+      {/* ===== Chiến dịch tiêu biểu (User only) ===== */}
+      <section className="mb-2 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Chiến dịch tiêu biểu</h2>
+        <Button variant="ghost" onClick={() => (window.location.href = "/campaigns")}>
+          Xem tất cả <ArrowRight size={14} className="ml-1" />
+        </Button>
+      </section>
 
-      {/* === Browse grid === */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="font-semibold">Bữa cơm đang có</div>
-        <div className="text-sm text-slate-500">{foods.total} mục</div>
-      </div>
-
-      {loadingFoods ? (
+      {loadingFeat ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="h-64 animate-pulse bg-slate-100" />
           ))}
         </div>
-      ) : foods.items.length === 0 ? (
-        <Empty title="Chưa có bữa cơm" hint="Hãy thử đổi bộ lọc hoặc thêm dữ liệu seed." />
+      ) : featured.items.length === 0 ? (
+        <Empty title="Chưa có chiến dịch" hint="Hãy quay lại sau hoặc khám phá các mục khác." />
       ) : (
-        <>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {foods.items.map((it) => (
-              <FoodCard key={it.id} item={it} />
-            ))}
-          </div>
-          <div className="flex items-center justify-center gap-2 mt-5">
-            <Button variant="ghost" className="px-3" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              « Trước
-            </Button>
-            <div className="text-sm px-2">
-              Trang {page}/{Math.max(1, totalPages)}
-            </div>
-            <Button
-              variant="ghost"
-              className="px-3"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Sau »
-            </Button>
-          </div>
-        </>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {featured.items.map((c) => (
+            <FeaturedCard key={c.id} c={c} />
+          ))}
+        </div>
       )}
     </>
+  );
+}
+
+/* ============== Small piece for Reco cards ============== */
+function FoodCard({ item }) {
+  const cover =
+    item.images?.[0] ||
+    "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=800&auto=format&fit=crop";
+
+  const km = typeof item.distance_km === "number" ? item.distance_km : null;
+  const score = typeof item.reco_score === "number" ? Math.round(item.reco_score * 100) : null;
+  const hoursLeft =
+    item.expire_at ? Math.max(0, Math.ceil((new Date(item.expire_at) - new Date()) / (1000 * 60 * 60))) : null;
+  const dietMatch = item.diet_match === true;
+
+  return (
+    <Card className="overflow-hidden">
+      <img src={cover} alt="" className="h-40 w-full object-cover" />
+      <div className="p-4 space-y-2">
+        <div className="font-semibold line-clamp-1">{item.title}</div>
+        <div className="text-sm text-slate-600 line-clamp-2">{item.description}</div>
+        <div className="text-sm">
+          Còn <b>{item.qty}</b> {item.unit}
+          {item.expire_at ? <> • HSD {new Date(item.expire_at).toLocaleString("vi-VN")}</> : null}
+        </div>
+
+        <div className="flex gap-2 flex-wrap items-center">
+          {(item.tags || []).slice(0, 4).map((t) => (
+            <Badge key={t}>#{t}</Badge>
+          ))}
+          {dietMatch ? <Badge intent="success">Phù hợp chế độ ăn</Badge> : null}
+          {km !== null ? (
+            <Badge><MapPin size={12} className="-ml-0.5 mr-1" /> {km.toFixed(1)} km</Badge>
+          ) : null}
+          {hoursLeft !== null ? (
+            <Badge intent={hoursLeft <= 12 ? "warning" : "default"}>
+              <Timer size={12} className="-ml-0.5 mr-1" /> còn ~{hoursLeft}h
+            </Badge>
+          ) : null}
+          {score !== null ? (
+            <Badge intent="primary">score {score}</Badge>
+          ) : null}
+        </div>
+
+        <div className="text-xs text-slate-500">
+          {item.location_addr ? <>Địa điểm: {item.location_addr}</> : null}
+        </div>
+      </div>
+    </Card>
   );
 }

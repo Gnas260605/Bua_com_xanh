@@ -25,6 +25,10 @@ export default function Settings() {
     lng: null,
   });
 
+  // 🔒 Chỉ chỉnh khi bật chế độ Edit
+  const [isEditing, setIsEditing] = useState(false);
+  const [snapshot, setSnapshot] = useState(null); // lưu bản sao để Hủy khôi phục
+
   const [profileLoading, setProfileLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -40,7 +44,7 @@ export default function Settings() {
     setProfileLoading(true);
     try {
       const me = await apiGet("/api/users/me");
-      setForm({
+      const next = {
         name: me?.name ?? "",
         email: me?.email ?? "",
         phone: me?.phone ?? "",
@@ -48,8 +52,11 @@ export default function Settings() {
         avatar_url: me?.avatar_url ?? "",
         lat: me?.lat ?? null,
         lng: me?.lng ?? null,
-      });
+      };
+      setForm(next);
       setUser(me);
+      setSnapshot(next); // cập nhật snapshot theo dữ liệu mới nhất
+      setIsEditing(false); // sau khi tải xong thì đóng chế độ chỉnh
     } catch (e) {
       console.error(e);
       t.error("Không tải được hồ sơ. Bạn có thể cần đăng nhập lại.");
@@ -72,9 +79,18 @@ export default function Settings() {
 
   function setField(k, v) { setForm((s) => ({ ...s, [k]: v })); }
 
+  function startEdit() {
+    setSnapshot(form); // lưu lại bản hiện tại
+    setIsEditing(true);
+  }
+  function cancelEdit() {
+    if (snapshot) setForm(snapshot);
+    setIsEditing(false);
+  }
+
   // ✅ Lưu hồ sơ: PATCH /api/users/me
   async function onSaveProfile(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     setSaving(true);
     try {
       const token = localStorage.getItem("bua_token") || sessionStorage.getItem("bua_token");
@@ -94,7 +110,7 @@ export default function Settings() {
         }),
       });
       if (!res.ok) throw new Error(`Save failed: ${res.status}`);
-      await loadProfile();
+      await loadProfile(); // sẽ setIsEditing(false) và cập nhật snapshot
       t.success("Đã cập nhật thông tin cá nhân");
     } catch (err) {
       console.error(err);
@@ -106,6 +122,7 @@ export default function Settings() {
 
   // ✅ Upload avatar: POST ${API_BASE}/api/upload + token
   async function onPickAvatar(file) {
+    if (!isEditing) return; // chặn khi chưa ở chế độ chỉnh sửa
     if (!file) return;
     try {
       const token = localStorage.getItem("bua_token") || sessionStorage.getItem("bua_token");
@@ -130,6 +147,7 @@ export default function Settings() {
   // Lấy GPS
   const [locating, setLocating] = useState(false);
   async function detectLocation() {
+    if (!isEditing) return; // chỉ cho phép khi đang chỉnh sửa
     if (!navigator.geolocation) {
       t.error("Trình duyệt không hỗ trợ định vị");
       return;
@@ -257,7 +275,6 @@ export default function Settings() {
 
   // ===== Change Password Logic =====
   function validatePassword(p) {
-    // Tùy dự án, bạn có thể siết chặt hơn (min length, số, chữ hoa...)
     return typeof p === "string" && p.length >= 8;
   }
 
@@ -303,8 +320,6 @@ export default function Settings() {
 
       if (!res.ok) throw new Error(`Change password failed: ${res.status}`);
       setPw1(""); setPw2("");
-
-      // Giả định backend đã gửi email thông báo
       t.success("Đã đổi mật khẩu. Vui lòng kiểm tra email xác nhận.");
     } catch (e) {
       console.error(e);
@@ -314,14 +329,28 @@ export default function Settings() {
     }
   }
 
+  const disabled = !isEditing || profileLoading;
+
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       {/* === PROFILE === */}
       <Card className="p-6 border rounded-2xl shadow-sm">
         <div className="flex items-center justify-between mb-5">
           <div className="text-xl font-semibold">Hồ sơ cá nhân</div>
-          <div className="text-sm text-gray-500 flex items-center gap-2">
-            <ShieldCheck size={16} /> Thông tin được bảo vệ
+          <div className="flex items-center gap-3">
+            <div className="text-sm text-gray-500 hidden sm:flex items-center gap-2">
+              <ShieldCheck size={16} /> Thông tin được bảo vệ
+            </div>
+            {!isEditing ? (
+              <Button type="button" onClick={startEdit}>Chỉnh sửa</Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="secondary" onClick={cancelEdit}>Hủy</Button>
+                <Button type="button" onClick={onSaveProfile} disabled={saving}>
+                  {saving ? "Đang lưu..." : "Lưu thay đổi"}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -337,10 +366,17 @@ export default function Settings() {
                   placeholder="https://..."
                   value={form.avatar_url}
                   onChange={(e) => setField("avatar_url", e.target.value)}
+                  disabled={disabled}
                 />
-                <label className="inline-flex">
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => onPickAvatar(e.target.files?.[0])} />
-                  <span className="btn border px-3 py-2 rounded-lg cursor-pointer">Tải ảnh</span>
+                <label className={`inline-flex ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => onPickAvatar(e.target.files?.[0])}
+                    disabled={disabled}
+                  />
+                  <span className="btn border px-3 py-2 rounded-lg">Tải ảnh</span>
                 </label>
               </div>
             </div>
@@ -350,7 +386,13 @@ export default function Settings() {
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                   <User size={16} /> Họ và tên
                 </label>
-                <input className="input w-full" value={form.name} onChange={(e) => setField("name", e.target.value)} required />
+                <input
+                  className="input w-full"
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  required
+                  disabled={disabled}
+                />
               </div>
               <div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
@@ -365,19 +407,35 @@ export default function Settings() {
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                   <Phone size={16} /> Số điện thoại
                 </label>
-                <input className="input w-full" value={form.phone} onChange={(e) => setField("phone", e.target.value)} />
+                <input
+                  className="input w-full"
+                  value={form.phone}
+                  onChange={(e) => setField("phone", e.target.value)}
+                  disabled={disabled}
+                />
               </div>
               <div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                   <Image size={16} /> Ảnh đại diện (URL)
                 </label>
-                <input className="input w-full" placeholder="https://..." value={form.avatar_url} onChange={(e) => setField("avatar_url", e.target.value)} />
+                <input
+                  className="input w-full"
+                  placeholder="https://..."
+                  value={form.avatar_url}
+                  onChange={(e) => setField("avatar_url", e.target.value)}
+                  disabled={disabled}
+                />
               </div>
             </div>
 
             <div>
               <label className="text-sm text-gray-600 mb-1 block">Địa chỉ</label>
-              <textarea className="input w-full" value={form.address} onChange={(e) => setField("address", e.target.value)} />
+              <textarea
+                className="input w-full"
+                value={form.address}
+                onChange={(e) => setField("address", e.target.value)}
+                disabled={disabled}
+              />
             </div>
 
             <div className="grid md:grid-cols-3 gap-4 items-end">
@@ -385,25 +443,42 @@ export default function Settings() {
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                   <MapPin size={16} /> Vĩ độ (lat)
                 </label>
-                <input className="input w-full" value={form.lat ?? ""} onChange={(e) => setField("lat", e.target.value === "" ? null : Number(e.target.value))} placeholder="16.047079" />
+                <input
+                  className="input w-full"
+                  value={form.lat ?? ""}
+                  onChange={(e) => setField("lat", e.target.value === "" ? null : Number(e.target.value))}
+                  placeholder="16.047079"
+                  disabled={disabled}
+                />
               </div>
               <div>
                 <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                   <Globe size={16} /> Kinh độ (lng)
                 </label>
-                <input className="input w-full" value={form.lng ?? ""} onChange={(e) => setField("lng", e.target.value === "" ? null : Number(e.target.value))} placeholder="108.206230" />
+                <input
+                  className="input w-full"
+                  value={form.lng ?? ""}
+                  onChange={(e) => setField("lng", e.target.value === "" ? null : Number(e.target.value))}
+                  placeholder="108.206230"
+                  disabled={disabled}
+                />
               </div>
               <div className="flex items-center gap-3">
-                <Button type="button" onClick={detectLocation} disabled={locating}>
-                  {locating ? <span className="inline-flex items-center gap-2"><Loader2 className="animate-spin" size={16}/> Đang lấy vị trí</span>
-                            : <span className="inline-flex items-center gap-2"><LocateFixed size={16}/> Lấy vị trí hiện tại</span>}
+                <Button type="button" onClick={detectLocation} disabled={disabled || locating}>
+                  {locating ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="animate-spin" size={16}/> Đang lấy vị trí
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2">
+                      <LocateFixed size={16}/> Lấy vị trí hiện tại
+                    </span>
+                  )}
                 </Button>
               </div>
             </div>
 
-            <div className="pt-2">
-              <Button type="submit" disabled={saving}>{saving ? "Đang lưu..." : "Lưu thay đổi"}</Button>
-            </div>
+            {/* Nút hành động cũng hiển thị ở đầu card – để tiện, giữ ở đó. */}
           </form>
         )}
       </Card>
@@ -411,7 +486,9 @@ export default function Settings() {
       {/* SECURITY (Password change with double entry) */}
       <Card className="p-6 border rounded-2xl shadow-sm">
         <div className="text-xl font-semibold mb-1">Bảo mật & Đăng nhập</div>
-        <p className="text-sm text-gray-600 mb-4">Đổi mật khẩu bằng cách nhập mật khẩu mới 2 lần. Sau khi đổi thành công, hệ thống sẽ gửi email thông báo.</p>
+        <p className="text-sm text-gray-600 mb-4">
+          Đổi mật khẩu bằng cách nhập mật khẩu mới 2 lần. Sau khi đổi thành công, hệ thống sẽ gửi email thông báo.
+        </p>
 
         <div className="grid md:grid-cols-2 gap-5">
           <div className="space-y-3">
@@ -454,7 +531,6 @@ export default function Settings() {
                 </button>
               </div>
 
-              {/* Hint / trạng thái */}
               {!!pw1 && (
                 <p className={`text-xs ${validatePassword(pw1) ? "text-emerald-600" : "text-red-600"}`}>
                   {validatePassword(pw1) ? "Mật khẩu hợp lệ" : "Mật khẩu tối thiểu 8 ký tự"}
@@ -510,9 +586,14 @@ export default function Settings() {
         <div className="grid lg:grid-cols-3 gap-6 mt-4">
           <SectionList title="Món đã cho" rows={(history.given || []).slice(0, 6)} empty="Chưa có món đã cho" link={{ to: "/donors", label: "Xem tất cả" }} />
           <SectionList title="Món đã nhận" rows={(history.received || []).slice(0, 6)} empty="Chưa có món đã nhận" link={{ to: "/recipients", label: "Xem tất cả" }} />
-          <SectionList title="Giao dịch (đã thu phí 2k)" rows={(history.payments || []).slice(0, 6).map((p) => ({
+          <SectionList
+            title="Giao dịch (đã thu phí 2k)"
+            rows={(history.payments || []).slice(0, 6).map((p) => ({
               id: p.id, name: `#${p.id?.slice?.(0,6)} • ${fmtVND(p.amount)} (${p.status || "success"})`, at: p.created_at,
-          }))} empty="Chưa có giao dịch" link={{ to: "/reports", label: "Xem báo cáo" }} />
+            }))}
+            empty="Chưa có giao dịch"
+            link={{ to: "/reports", label: "Xem báo cáo" }}
+          />
         </div>
       </Card>
 
