@@ -1,5 +1,5 @@
 ﻿// src/pages/AdminDashboard.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "../lib/api";
 import {
   Users as UsersIcon,
@@ -8,22 +8,97 @@ import {
   RefreshCcw,
   AlertCircle,
 } from "lucide-react";
+import { useToast } from "../components/ui/Toast";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastAt, setLastAt] = useState(null);
+  const prevCountsRef = useRef(null);
+  const t = useToast();
+
+  const nf = useMemo(() => new Intl.NumberFormat("vi-VN"), []);
+  const usersTotal = stats?.users?.total ?? 0;
+  const campaignsTotal = stats?.campaigns?.total ?? 0;
+
+  // Tổng số dòng (rows) payments
+  const paymentsRows = useMemo(() => {
+    if (!Array.isArray(stats?.payments)) return 0;
+    return stats.payments.reduce((a, b) => a + (b?.c ?? b?.count ?? 0), 0);
+  }, [stats]);
+
+  function getCounts(s) {
+    return {
+      users: Number(s?.users?.total ?? 0),
+      campaigns: Number(s?.campaigns?.total ?? 0),
+      paymentRows: Array.isArray(s?.payments)
+        ? s.payments.reduce((a, b) => a + (b?.c ?? b?.count ?? 0), 0)
+        : 0,
+    };
+  }
+
+  function formatTime(d) {
+    try {
+      return new Intl.DateTimeFormat("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(d);
+    } catch {
+      return d?.toLocaleString?.() ?? String(d);
+    }
+  }
+
+  const fmtDelta = (n) =>
+    n > 0 ? `↑ +${nf.format(n)}` : n < 0 ? `↓ -${nf.format(Math.abs(n))}` : "0";
 
   async function load() {
+    const loadingToast = t.info("Đang tải số liệu…", { duration: 1800 });
     try {
       setErr("");
       setLoading(true);
       const s = await apiGet("/api/admin/stats");
       setStats(s);
       setLastAt(new Date());
+
+      // So sánh thay đổi để hiện toast
+      const cur = getCounts(s);
+      const prev = prevCountsRef.current;
+
+      if (!prev) {
+        t.success({ title: "Đã tải số liệu", description: `Users: ${nf.format(cur.users)} • Campaigns: ${nf.format(cur.campaigns)} • Payments: ${nf.format(cur.paymentRows)}` });
+      } else {
+        const dUsers = cur.users - prev.users;
+        const dCamps = cur.campaigns - prev.campaigns;
+        const dPays = cur.paymentRows - prev.paymentRows;
+        const changed = dUsers !== 0 || dCamps !== 0 || dPays !== 0;
+
+        if (changed) {
+          const lines = [
+            dUsers !== 0 ? `Users: ${fmtDelta(dUsers)} (tổng ${nf.format(cur.users)})` : null,
+            dCamps !== 0 ? `Campaigns: ${fmtDelta(dCamps)} (tổng ${nf.format(cur.campaigns)})` : null,
+            dPays !== 0 ? `Payments (rows): ${fmtDelta(dPays)} (tổng ${nf.format(cur.paymentRows)})` : null,
+          ].filter(Boolean).join("\n");
+
+          t.success({
+            title: "Cập nhật thành công",
+            description: lines,
+            duration: 4500,
+          });
+        } else {
+          t.info({ title: "Không có thay đổi", description: "Dữ liệu hiện tại đã là mới nhất." });
+        }
+      }
+
+      prevCountsRef.current = cur;
     } catch (e) {
-      setErr(e?.message || "Load stats failed");
+      const msg = e?.message || "Load stats failed";
+      setErr(msg);
+      t.error({ title: "Không tải được dữ liệu", description: msg, duration: 5000 });
     } finally {
       setLoading(false);
     }
@@ -31,17 +106,8 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const nf = useMemo(() => new Intl.NumberFormat("vi-VN"), []);
-  const usersTotal = stats?.users?.total ?? 0;
-  const campaignsTotal = stats?.campaigns?.total ?? 0;
-
-  // Payments: tổng số dòng (rows)
-  const paymentsRows = useMemo(() => {
-    if (!Array.isArray(stats?.payments)) return 0;
-    return stats.payments.reduce((a, b) => a + (b?.c ?? b?.count ?? 0), 0);
-  }, [stats]);
 
   return (
     <div className="space-y-6">
@@ -62,13 +128,14 @@ export default function AdminDashboard() {
           onClick={load}
           className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium hover:bg-gray-50 active:scale-[.98] transition"
           disabled={loading}
+          title="Làm mới"
         >
           <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Làm mới
         </button>
       </div>
 
-      {/* Error banner */}
+      {/* Error banner (song song với toast để nhìn thấy trên trang) */}
       {err && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -202,14 +269,12 @@ function UsersByRole({ byRole }) {
 function PaymentsBreakdown({ rows }) {
   const list = Array.isArray(rows) ? rows : [];
 
-  // Tự động nhận diện nhãn (provider/status/method/…)
   const labelKey = useMemo(() => {
     if (!list.length) return null;
-    const prefer = ["provider", "status", "method", "day", "name", "label"];
+    const prefer = ["provider", "status", "method", "day", "name, label"];
     const keys = Object.keys(list[0] ?? {});
     const found = prefer.find((k) => keys.includes(k));
     if (found) return found;
-    // fallback: lấy key string đầu tiên khác count
     return keys.find((k) => !["c", "count"].includes(k)) ?? null;
   }, [list]);
 
@@ -292,21 +357,4 @@ function EmptyState({ text = "No data" }) {
       {text}
     </div>
   );
-}
-
-/* ============= helpers ============= */
-
-function formatTime(d) {
-  try {
-    return new Intl.DateTimeFormat("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(d);
-  } catch {
-    return d?.toLocaleString?.() ?? String(d);
-  }
 }

@@ -1,57 +1,62 @@
-import React, { Suspense } from "react";
+// src/App.jsx
+import React, { Suspense, lazy, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-
-import Layout from "./components/layout/Layout";
-
-// App pages
-import Overview from "./pages/Overview";
-import Campaigns from "./pages/Campaigns";
-import Donors from "./pages/Donors";
-import Recipients from "./pages/Recipients";
-import Shippers from "./pages/Shippers";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
-
-// Auth pages
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import ForgotPassword from "./pages/ForgotPassword";
-import VerifyOtp from "./pages/VerifyOtp";
-import ResetPassword from "./pages/ResetPassword";
-
-// Admin
-import RequireAdmin from "./auth/RequireAdmin";
-import AdminLayout from "./admin/AdminLayout";
-import AdminDashboard from "./admin/AdminDashboard";
-import AdminUsers from "./admin/AdminUsers";
-import AdminPlaceholder from "./admin/AdminPlaceholder";
-
-// Admin pages bổ sung
-import AdminCampaigns from "./admin/AdminCampaigns";
-import AdminBookings from "./admin/AdminBookings";
-import AdminDeliveries from "./admin/AdminDeliveries";
-import AdminPickupPoints from "./admin/AdminPickupPoints";
-import AdminPages from "./admin/AdminPages";
-import AdminAnnouncements from "./admin/AdminAnnouncements";
-import AdminPayments from "./admin/AdminPayments";
-import AdminAudit from "./admin/AdminAudit";
-
 import { useAuth } from "./auth/AuthContext";
 
-/* ---------- Small utilities ---------- */
+/* ========================
+   Lazy pages & layouts
+======================== */
+const Layout = lazy(() => import("./components/layout/Layout"));
 
-function Loader() {
+// User pages
+const Overview = lazy(() => import("./pages/Overview"));
+const Campaigns = lazy(() => import("./pages/Campaigns"));
+const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
+const CampaignReport = lazy(() => import("./pages/CampaignReport"));
+const Donors = lazy(() => import("./pages/Donors"));
+const Recipients = lazy(() => import("./pages/Recipients"));
+const Shippers = lazy(() => import("./pages/Shippers"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Settings = lazy(() => import("./pages/Settings"));
+
+// Auth pages
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const VerifyOtp = lazy(() => import("./pages/VerifyOtp"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+
+// Admin
+const RequireAdmin = lazy(() => import("./auth/RequireAdmin"));
+const AdminLayout = lazy(() => import("./admin/AdminLayout"));
+const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
+const AdminUsers = lazy(() => import("./admin/AdminUsers"));
+const AdminPlaceholder = lazy(() => import("./admin/AdminPlaceholder"));
+const AdminCampaigns = lazy(() => import("./admin/AdminCampaigns"));
+const AdminBookings = lazy(() => import("./admin/AdminBookings"));
+const AdminDeliveries = lazy(() => import("./admin/AdminDeliveries"));
+const AdminPickupPoints = lazy(() => import("./admin/AdminPickupPoints"));
+const AdminPages = lazy(() => import("./admin/AdminPages"));
+const AdminAnnouncements = lazy(() => import("./admin/AdminAnnouncements"));
+const AdminPayments = lazy(() => import("./admin/AdminPayments"));
+const AdminAudit = lazy(() => import("./admin/AdminAudit"));
+
+/* ========================
+   Small utilities
+======================== */
+function Loader({ message = "Đang tải..." }) {
   return (
     <div className="w-full py-16 flex items-center justify-center text-slate-500">
-      Đang tải...
+      {message}
     </div>
   );
 }
 
 function ScrollToTop() {
   const location = useLocation();
-  React.useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "instant" });
+  useEffect(() => {
+    // behavior: 'auto' để tránh lỗi không chuẩn
+    window.scrollTo({ top: 0, behavior: "auto" });
   }, [location.pathname, location.search, location.hash]);
   return null;
 }
@@ -80,20 +85,31 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/* ---------- Route guards ---------- */
+/* ========================
+   Route guards
+======================== */
+function useAuthState() {
+  // Chịu được nhiều biến thể context: {user, loading} hoặc {user, isLoading}
+  const ctx = useAuth?.() || {};
+  const user = ctx.user ?? null;
+  const loading = ctx.loading ?? ctx.isLoading ?? (ctx.user === undefined); // undefined => đang nạp
+  return { user, loading };
+}
 
 function Protected({ children }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuthState();
   const location = useLocation();
-  if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
+
+  if (loading) return <Loader message="Đang xác thực..." />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
   return children;
 }
 
 function PublicOnly({ children }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuthState();
   const location = useLocation();
+
+  if (loading) return <Loader message="Đang tải..." />;
   if (user) {
     const backTo = location.state?.from?.pathname || "/";
     return <Navigate to={backTo} replace />;
@@ -101,8 +117,9 @@ function PublicOnly({ children }) {
   return children;
 }
 
-/* ---------- App Routes ---------- */
-
+/* ========================
+   App Routes
+======================== */
 export default function App() {
   return (
     <>
@@ -110,7 +127,7 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<Loader />}>
           <Routes>
-            {/* Public (guest-only) */}
+            {/* Guest-only */}
             <Route
               path="/login"
               element={
@@ -152,7 +169,7 @@ export default function App() {
               }
             />
 
-            {/* Protected user area */}
+            {/* User area */}
             <Route
               element={
                 <Protected>
@@ -162,6 +179,8 @@ export default function App() {
             >
               <Route index element={<Overview />} />
               <Route path="campaigns" element={<Campaigns />} />
+              <Route path="campaigns/:id" element={<CampaignDetail />} />
+              <Route path="campaigns/:id/report" element={<CampaignReport />} />
               <Route path="donors" element={<Donors />} />
               <Route path="recipients" element={<Recipients />} />
               <Route path="shippers" element={<Shippers />} />
@@ -169,7 +188,7 @@ export default function App() {
               <Route path="settings" element={<Settings />} />
             </Route>
 
-            {/* Admin area (requires login + admin role) */}
+            {/* Admin area */}
             <Route
               path="/admin"
               element={
@@ -180,31 +199,22 @@ export default function App() {
                 </Protected>
               }
             >
-              {/* Dashboard */}
               <Route index element={<AdminDashboard />} />
-
-              {/* Quản trị */}
               <Route path="users" element={<AdminUsers />} />
               <Route path="foods" element={<AdminPlaceholder title="Foods Moderation" />} />
               <Route path="bookings" element={<AdminBookings />} />
               <Route path="deliveries" element={<AdminDeliveries />} />
-
-              {/* Chiến dịch & CMS */}
               <Route path="campaigns" element={<AdminCampaigns />} />
               <Route path="pickup-points" element={<AdminPickupPoints />} />
               <Route path="pages" element={<AdminPages />} />
-
-              {/* Tài chính & Hệ thống */}
               <Route path="payments" element={<AdminPayments />} />
               <Route path="announcements" element={<AdminAnnouncements />} />
               <Route path="audit" element={<AdminAudit />} />
               <Route path="settings" element={<AdminPlaceholder title="Site Settings" />} />
-
-              {/* Fallback */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Route>
 
-            {/* Catch-all */}
+            {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

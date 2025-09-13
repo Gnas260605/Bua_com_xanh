@@ -15,48 +15,71 @@ import { authResetRouter } from "./routes/auth.reset.js";
 import usersRouter from "./routes/users.js";
 import overviewRouter from "./routes/overview.js";
 import foodsRouter from "./routes/foods.js";
+import mealsRouter from "./routes/meals.js";
 import campaignsRouter from "./routes/campaigns.js";
-import adminCampaignsRouter from "./routes/admincampaigns.js"; // ✅ router admin campaigns riêng
+
+// ⬇️ Router mới/được sửa: trả số liệu từ DB cho trang Reports
+import adminCampaignsRouter from "./routes/admincampaigns.js";
+
 import donorsRouter from "./routes/donors.js";
 import recipientsRouter from "./routes/recipients.js";
 import shippersRouter from "./routes/shippers.js";
-import uploadRouter from "./routes/upload.js"; // chứa /upload và /upload-data
+import uploadRouter from "./routes/upload.js";
 import adminRouter from "./routes/admin.js";
-
+import vietqrWebhook from "./routes/webhooks.vietqr.js";
+import importPayments from "./routes/payments.import.js";
+import paymentsRouter from "./routes/payments.js";
+import siteSettingsRouter from "./routes/site_settings.js";
+import pickupPointsRouter from "./routes/pickup_points.js";
+import adminPickupPointsRouter from "./routes/admin.pickup_points.js";
+import momoRouter from "./routes/payments.momo.js";
+import reportsPublicRouter from "./routes/reports.public.js";
+import paymentsImportRouter from "./routes/payments.import.js";
 // ====== Khởi tạo schema (nếu dùng MySQL)
 await ensureMySQLSchema();
 
 const app = express();
-
-// Nếu deploy sau proxy (nginx, render, railway, vercel, cloudflare), nên bật:
 app.set("trust proxy", true);
 
-// ====== CORS
+/* ---------- CORS ---------- */
 const origins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
   : ["http://localhost:5173", "http://127.0.0.1:5173"];
 
 app.use(
   cors({
-    origin: origins,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (origins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Accept",
+      "Origin",
+      "Cache-Control",
+      "Pragma",
+      "X-Requested-With",
+    ],
+    exposedHeaders: ["Content-Length"],
+    maxAge: 86400,
   })
 );
+app.options("*", cors());
 
-// ====== Body parsers (tăng limit để nhận data_url ảnh)
+/* ---------- Body parsers & logger ---------- */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+if (process.env.NODE_ENV !== "test") app.use(morgan("dev"));
 
-// ====== Logger (dev)
-if (process.env.NODE_ENV !== "test") {
-  app.use(morgan("dev"));
-}
-
-// ====== ESM __dirname
+/* ---------- ESM __dirname ---------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ====== Static: GET /uploads/**
+/* ---------- Static ---------- */
 app.use(
   "/uploads",
   express.static(path.resolve(__dirname, "..", "uploads"), {
@@ -64,8 +87,14 @@ app.use(
     immutable: false,
   })
 );
+app.use("/api/reports", reportsPublicRouter);
+app.use("/api", paymentsImportRouter);
+/* ---------- Webhooks ---------- */
+app.use("/api/webhooks", express.json({ type: "*/*" }), vietqrWebhook);
 
-// ====== Mount API routers
+/* ---------- Mount API routers ---------- */
+app.use("/api/site-settings", siteSettingsRouter);
+
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/auth", authResetRouter);
@@ -73,54 +102,57 @@ app.use("/api/auth", authResetRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/overview", overviewRouter);
 app.use("/api/foods", foodsRouter);
+app.use("/api/meals", mealsRouter);
 
-// Chiến dịch
-app.use("/api/campaigns", campaignsRouter);          // public
-app.use("/api/admin/campaigns", adminCampaignsRouter); // ✅ admin
+// Public campaigns
+app.use("/api/campaigns", campaignsRouter);
+
+// Admin campaigns (đÃ TÍNH tổng hợp số liệu cho trang Reports)
+app.use("/api/admin/campaigns", adminCampaignsRouter);
 
 app.use("/api/donors", donorsRouter);
 app.use("/api/recipients", recipientsRouter);
 app.use("/api/shippers", shippersRouter);
 
-// Upload (bao gồm /api/upload và /api/upload-data)
+// Upload
 app.use("/api", uploadRouter);
 
-// Admin router tổng hợp (các chức năng admin khác: users, settings…)
+// Admin tổng hợp (giữ nguyên các route khác dưới /api/admin)
 app.use("/api/admin", adminRouter);
 
-// ====== Friendly root
+// Payments
+app.use("/api/payments", paymentsRouter);
+app.use("/api/payments/momo", momoRouter);
+app.use("/api/payments-import", importPayments);
+
+// Pickup points
+app.use("/api/pickup-points", pickupPointsRouter);
+app.use("/api/admin/pickup-points", adminPickupPointsRouter);
+
+// Friendly root
 app.get("/", (_req, res) => {
   res.send("BuaComXanh API is running. Try GET /api/health");
 });
-
-// (tuỳ chọn) hạn chế 404 favicon trong log
 app.get("/favicon.ico", (_req, res) => res.status(204).end());
 
-// ====== 404 handler
+// 404
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found", path: req.originalUrl });
 });
 
-// ====== Error handler cuối
+// Error handler
 app.use((err, _req, res, _next) => {
   console.error(err);
-
-  // Các lỗi phổ biến khi upload
   if (err?.message === "ONLY_IMAGE_ALLOWED") {
-    return res
-      .status(415)
-      .json({ error: "Chỉ cho phép file ảnh (png, jpg, jpeg, webp, gif, svg)" });
+    return res.status(415).json({ error: "Chỉ cho phép file ảnh (png, jpg, jpeg, webp, gif, svg)" });
   }
   if (err?.code === "LIMIT_FILE_SIZE") {
     return res.status(413).json({ error: "File quá lớn (tối đa 5MB)" });
   }
-
-  // Mặc định
-  res
-    .status(err?.statusCode || 500)
-    .json({ error: err?.message || "Internal Server Error" });
+  res.status(err?.statusCode || 500).json({ error: err?.message || "Internal Server Error" });
 });
 
+// Start
 const PORT = Number(process.env.PORT || 4000);
 app.listen(PORT, () => {
   console.log(`API up at http://localhost:${PORT}`);

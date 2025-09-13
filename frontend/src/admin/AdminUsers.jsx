@@ -6,6 +6,7 @@ import {
   ShieldQuestion, Filter, Edit3, Trash2, Ban, Unlock,
   FileSearch, UserCog, Check, X
 } from "lucide-react";
+import { useToast } from "../components/ui/Toast";
 
 const ROLE_OPTIONS = ["all", "user", "donor", "receiver", "shipper", "admin"];
 const STATUS_OPTIONS = ["all", "active", "banned", "deleted"];
@@ -30,10 +31,15 @@ export default function AdminUsers() {
   const [logsLoading, setLogsLoading] = useState(false);
 
   const deb = useRef(null);
+  const prevTotals = useRef({ total: 0 });
+  const t = useToast();
 
   async function load(page = 1, pageSize = data.pageSize, silent = false) {
     try {
-      if (!silent) setLoading(true);
+      if (!silent) {
+        setLoading(true);
+        t.info("Đang tải danh sách người dùng…");
+      }
       setErr("");
       const qs = new URLSearchParams({
         q,
@@ -46,8 +52,22 @@ export default function AdminUsers() {
       const res = await apiGet(`/api/admin/users?${qs.toString()}`);
       setData({ ...res, page, pageSize });
       setSelected([]);
+
+      if (!silent) {
+        const prev = prevTotals.current.total ?? 0;
+        if (prev !== res.total) {
+          const delta = res.total - prev;
+          const arrow = delta > 0 ? `↑ +${delta}` : `↓ ${delta}`;
+          t.success(`Đã tải ${res.total} người dùng (${arrow})`);
+        } else {
+          t.info("Dữ liệu người dùng đã là mới nhất");
+        }
+        prevTotals.current.total = res.total;
+      }
     } catch (e) {
-      setErr(e?.message || "Load users failed");
+      const msg = e?.message || "Load users failed";
+      setErr(msg);
+      t.error(`Không tải được danh sách: ${msg}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -80,21 +100,32 @@ export default function AdminUsers() {
   );
 
   function toggleSelectAll(checked) {
-    if (checked) setSelected(data.items.map((u) => u.id));
-    else setSelected([]);
+    if (checked) {
+      setSelected(data.items.map((u) => u.id));
+      t.info(`Đã chọn ${data.items.length} người dùng`);
+    } else {
+      setSelected([]);
+      t.info("Bỏ chọn tất cả");
+    }
   }
   function toggleOne(id) {
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+    setSelected((s) => {
+      const next = s.includes(id) ? s.filter((x) => x !== id) : [...s, id];
+      t.info(next.includes(id) ? "Đã chọn 1 người dùng" : "Đã bỏ chọn 1 người dùng");
+      return next;
+    });
   }
 
   async function setStatusOne(id, next) {
     if (!id) return;
     try {
       setRowBusy(id);
+      t.info("Đang cập nhật trạng thái…");
       await apiPatch(`/api/admin/users/${id}`, { status: next });
+      t.success(`Đã chuyển trạng thái sang "${next}"`);
       await load(data.page, data.pageSize, true);
     } catch (e) {
-      alert(e?.message || "Update failed");
+      t.error(e?.message || "Cập nhật trạng thái thất bại");
     } finally {
       setRowBusy(null);
     }
@@ -105,10 +136,12 @@ export default function AdminUsers() {
     if (!confirm("Xoá vĩnh viễn user này? Hành động không thể hoàn tác.")) return;
     try {
       setRowBusy(id);
+      t.info("Đang xoá người dùng…");
       await apiDelete(`/api/admin/users/${id}`);
+      t.success("Đã xoá người dùng");
       await load(data.page, data.pageSize, true);
     } catch (e) {
-      alert(e?.message || "Delete failed");
+      t.error(e?.message || "Xoá thất bại");
     } finally {
       setRowBusy(null);
     }
@@ -118,10 +151,12 @@ export default function AdminUsers() {
     if (!confirm("Nâng quyền Admin cho người dùng này?")) return;
     try {
       setRowBusy(id);
+      t.info("Đang nâng quyền Admin…");
       await apiPatch(`/api/admin/users/${id}`, { role: "admin" });
+      t.success("Đã đặt vai trò chính thành Admin");
       await load(data.page, data.pageSize, true);
     } catch (e) {
-      alert(e?.message || "Update failed");
+      t.error(e?.message || "Nâng quyền thất bại");
     } finally {
       setRowBusy(null);
     }
@@ -131,11 +166,16 @@ export default function AdminUsers() {
     setLogU(u);
     setLogs([]);
     setLogsLoading(true);
+    t.info("Đang tải audit log…");
     try {
       const res = await apiGet(`/api/admin/audit?userId=${encodeURIComponent(u.id)}&limit=30`);
-      setLogs(Array.isArray(res?.items) ? res.items : res);
+      const rows = Array.isArray(res?.items) ? res.items : res;
+      setLogs(rows);
+      t.success(`Đã tải ${rows?.length ?? 0} dòng audit`);
     } catch (e) {
-      setLogs([{ id: "err", action: e?.message || "Load audit failed", created_at: new Date().toISOString() }]);
+      const row = { id: "err", action: e?.message || "Load audit failed", created_at: new Date().toISOString() };
+      setLogs([row]);
+      t.error(e?.message || "Không tải được audit log");
     } finally {
       setLogsLoading(false);
     }
@@ -145,23 +185,32 @@ export default function AdminUsers() {
   async function bulkStatus(next) {
     if (!selected.length) return;
     if (!confirm(`Áp dụng trạng thái "${next}" cho ${selected.length} user?`)) return;
+    t.info(`Đang cập nhật trạng thái cho ${selected.length} user…`);
+    let ok = 0, fail = 0;
     for (const id of selected) {
-      try { await apiPatch(`/api/admin/users/${id}`, { status: next }); } catch {}
+      try { await apiPatch(`/api/admin/users/${id}`, { status: next }); ok++; } catch { fail++; }
     }
     await load(data.page, data.pageSize, true);
+    if (fail === 0) t.success(`Đã cập nhật ${ok}/${selected.length} user`);
+    else t.error(`Hoàn tất: ${ok} thành công, ${fail} lỗi`);
   }
+
   async function bulkDelete() {
     if (!selected.length) return;
     if (!confirm(`Xoá ${selected.length} user? Hành động không thể hoàn tác.`)) return;
+    t.info(`Đang xoá ${selected.length} user…`);
+    let ok = 0, fail = 0;
     for (const id of selected) {
-      try { await apiDelete(`/api/admin/users/${id}`); } catch {}
+      try { await apiDelete(`/api/admin/users/${id}`); ok++; } catch { fail++; }
     }
     await load(1, data.pageSize, true);
+    if (fail === 0) t.success(`Đã xoá ${ok}/${selected.length} user`);
+    else t.error(`Hoàn tất: ${ok} thành công, ${fail} lỗi`);
   }
 
   return (
     <div className="space-y-5">
-      {/* Header + Filters (2021) */}
+      {/* Header + Filters */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>
@@ -183,7 +232,7 @@ export default function AdminUsers() {
             <select
               className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-emerald-400"
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => { setRole(e.target.value); t.info(`Lọc vai trò: ${e.target.value}`); }}
             >
               {ROLE_OPTIONS.map((r) => (
                 <option key={r} value={r}>{r === "all" ? "Tất cả vai trò" : r}</option>
@@ -192,7 +241,7 @@ export default function AdminUsers() {
             <select
               className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-emerald-400"
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => { setStatus(e.target.value); t.info(`Lọc trạng thái: ${e.target.value}`); }}
             >
               {STATUS_OPTIONS.map((s) => (
                 <option key={s} value={s}>{s === "all" ? "Tất cả trạng thái" : s}</option>
@@ -203,13 +252,13 @@ export default function AdminUsers() {
           <select
             className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-400"
             value={data.pageSize}
-            onChange={(e) => load(1, Number(e.target.value))}
+            onChange={(e) => { t.info(`Đổi kích thước trang: ${e.target.value}/trang`); load(1, Number(e.target.value)); }}
           >
             {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}/trang</option>)}
           </select>
 
           <button
-            onClick={() => { setRefreshing(true); load(data.page, data.pageSize); }}
+            onClick={() => { setRefreshing(true); t.info("Đang làm mới…"); load(data.page, data.pageSize); }}
             className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
             disabled={refreshing || loading}
             title="Làm mới"
@@ -221,7 +270,8 @@ export default function AdminUsers() {
           <a
             href="/admin/reports"
             className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-            title="Xử lý báo cáo & khiếu nại (2045)"
+            title="Xử lý báo cáo & khiếu nại"
+            onClick={() => t.info("Đi tới trang Reports")}
           >
             <FileSearch className="h-4 w-4" />
             Reports
@@ -240,7 +290,7 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Bulk actions (2022/2044) */}
+      {/* Bulk actions */}
       {selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-3 shadow-sm">
           <span className="text-sm text-gray-500">Đã chọn {nf.format(selected.length)}</span>
@@ -268,7 +318,7 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Table (2021) */}
+      {/* Table */}
       <div className="relative rounded-2xl border bg-white shadow-sm">
         {loading && !data.items.length ? (
           <SkeletonTable />
@@ -328,13 +378,15 @@ export default function AdminUsers() {
                               onToggle={async (next) => {
                                 try {
                                   setRowBusy(u.id);
+                                  t.info(`Đang cập nhật vai trò phụ: ${r}…`);
                                   const nextExtras = next
                                     ? Array.from(new Set([...extras, r]))
                                     : extras.filter((x) => x !== r);
                                   await apiPatch(`/api/admin/users/${u.id}`, { extraRoles: nextExtras });
+                                  t.success(`Đã ${next ? "bật" : "tắt"} vai trò "${r}"`);
                                   await load(data.page, data.pageSize, true);
                                 } catch (e) {
-                                  alert(e?.message || "Update failed");
+                                  t.error(e?.message || "Cập nhật vai trò phụ thất bại");
                                 } finally {
                                   setRowBusy(null);
                                 }
@@ -352,7 +404,7 @@ export default function AdminUsers() {
                               Admin
                             </BtnGhost>
                           )}
-                          <BtnGhost onClick={() => setEditU(u)} title="Chỉnh sửa">
+                          <BtnGhost onClick={() => { setEditU(u); t.info("Mở form chỉnh sửa người dùng"); }} title="Chỉnh sửa">
                             <Edit3 className="h-4 w-4" /> Edit
                           </BtnGhost>
                           {u.status !== "banned" ? (
@@ -367,7 +419,7 @@ export default function AdminUsers() {
                           <BtnDanger onClick={() => deleteOne(u.id)} title="Xoá">
                             <Trash2 className="h-4 w-4" /> Xoá
                           </BtnDanger>
-                          <BtnGhost onClick={() => openLogs(u)} title="Audit log (2023)">
+                          <BtnGhost onClick={() => openLogs(u)} title="Audit log">
                             <UserCog className="h-4 w-4" /> Log
                           </BtnGhost>
                         </div>
@@ -393,7 +445,7 @@ export default function AdminUsers() {
           <button
             className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
             disabled={data.page <= 1 || loading}
-            onClick={() => load(data.page - 1)}
+            onClick={() => { t.info("Trang trước"); load(data.page - 1); }}
           >Prev</button>
           <div className="min-w-[110px] text-center text-sm">
             Trang {nf.format(data.page)} / {nf.format(totalPages)}
@@ -401,24 +453,28 @@ export default function AdminUsers() {
           <button
             className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
             disabled={data.page >= totalPages || loading}
-            onClick={() => load(data.page + 1)}
+            onClick={() => { t.info("Trang tiếp theo"); load(data.page + 1); }}
           >Next</button>
         </div>
       </div>
 
-      {/* Edit modal (2022/2044) */}
-      <Modal open={!!editU} onClose={() => setEditU(null)} title="Chỉnh sửa user">
+      {/* Edit modal */}
+      <Modal open={!!editU} onClose={() => { setEditU(null); t.info("Đóng form chỉnh sửa"); }} title="Chỉnh sửa user">
         {editU && (
           <EditUserForm
             u={editU}
-            onClose={() => setEditU(null)}
-            onSaved={async () => { setEditU(null); await load(data.page, data.pageSize, true); }}
+            onClose={() => { setEditU(null); t.info("Đóng form chỉnh sửa"); }}
+            onSaved={async () => {
+              setEditU(null);
+              t.success("Đã lưu thay đổi người dùng");
+              await load(data.page, data.pageSize, true);
+            }}
           />
         )}
       </Modal>
 
-      {/* Audit log modal (2023) */}
-      <Modal open={!!logU} onClose={() => setLogU(null)} title={`Audit log • ${logU?.name || logU?.email || ""}`}>
+      {/* Audit log modal */}
+      <Modal open={!!logU} onClose={() => { setLogU(null); t.info("Đóng audit log"); }} title={`Audit log • ${logU?.name || logU?.email || ""}`}>
         {logsLoading ? (
           <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Đang tải…</div>
         ) : (
@@ -576,21 +632,24 @@ function EditUserForm({ u, onSaved, onClose }) {
     extraRoles: normalizeExtras(u),
   });
   const [saving, setSaving] = useState(false);
+  const t = useToast();
 
   async function save() {
     try {
       setSaving(true);
+      t.info("Đang lưu thay đổi…");
       await apiPatch(`/api/admin/users/${u.id}`, {
         name: form.name,
         phone: form.phone,
         address: form.address,
-        role: form.role,              // set role chính (2044)
-        status: form.status,          // chỉnh sửa trạng thái (2022)
-        extraRoles: form.extraRoles,  // set vai trò phụ (user_roles)
+        role: form.role,              // set role chính
+        status: form.status,          // chỉnh sửa trạng thái
+        extraRoles: form.extraRoles,  // set vai trò phụ
       });
+      t.success("Đã lưu thay đổi");
       onSaved?.();
     } catch (e) {
-      alert(e?.message || "Save failed");
+      t.error(e?.message || "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -599,7 +658,8 @@ function EditUserForm({ u, onSaved, onClose }) {
   function toggleExtra(r) {
     setForm((f) => {
       const has = f.extraRoles.includes(r);
-      return { ...f, extraRoles: has ? f.extraRoles.filter((x) => x !== r) : [...f.extraRoles, r] };
+      const next = has ? f.extraRoles.filter((x) => x !== r) : [...f.extraRoles, r];
+      return { ...f, extraRoles: next };
     });
   }
 
@@ -681,6 +741,3 @@ function formatTime(d) {
     return String(d);
   }
 }
-
-/* ============= Small CSS helpers via Tailwind ============= */
-/* thêm vào global: .input-like { ... } nếu bạn chưa có .input */

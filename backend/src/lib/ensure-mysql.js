@@ -86,4 +86,6 @@ export async function ensureMySQLSchema() {
     rescued_meals INT NOT NULL DEFAULT 0,
     fee_revenue INT NOT NULL DEFAULT 0
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`);
+
+  
 }

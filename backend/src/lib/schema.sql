@@ -360,5 +360,27 @@ CREATE TABLE `task_comments` (
   PRIMARY KEY (`id`),
   KEY `idx_task_comments_task` (`task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `donations`;
+CREATE TABLE `donations` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `campaign_id` CHAR(36) NOT NULL,
+  `type` ENUM('money','meal') NOT NULL DEFAULT 'money',
+  `amount` BIGINT DEFAULT 0,
+  `qty` INT DEFAULT 0,
+  `currency` VARCHAR(10) DEFAULT 'VND',
+  `donor_name` VARCHAR(255),
+  `donor_note` VARCHAR(255),
+  `memo` VARCHAR(255),
+  `bank_txn_id` VARCHAR(64) UNIQUE,
+  `status` ENUM('pending','success','failed','refunded') DEFAULT 'success',
+  `paid_at` DATETIME NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_donations_campaign`
+    FOREIGN KEY (`campaign_id`) REFERENCES `campaigns`(`id`)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE campaigns
+ADD COLUMN type ENUM('money','meal') NOT NULL DEFAULT 'money' AFTER title;
 
+CREATE INDEX `idx_donations_campaign` ON `donations` (`campaign_id`, `type`, `status`);
 SET FOREIGN_KEY_CHECKS = 1;
