@@ -17,24 +17,21 @@ import overviewRouter from "./routes/overview.js";
 import foodsRouter from "./routes/foods.js";
 import mealsRouter from "./routes/meals.js";
 import campaignsRouter from "./routes/campaigns.js";
-
-// ⬇️ Router mới/được sửa: trả số liệu từ DB cho trang Reports
 import adminCampaignsRouter from "./routes/admincampaigns.js";
-
 import donorsRouter from "./routes/donors.js";
 import recipientsRouter from "./routes/recipients.js";
 import shippersRouter from "./routes/shippers.js";
 import uploadRouter from "./routes/upload.js";
 import adminRouter from "./routes/admin.js";
 import vietqrWebhook from "./routes/webhooks.vietqr.js";
-
 import paymentsRouter from "./routes/payments.js";
+import momoRouter from "./routes/payments.momo.js";
 import siteSettingsRouter from "./routes/site_settings.js";
 import pickupPointsRouter from "./routes/pickup_points.js";
 import adminPickupPointsRouter from "./routes/admin.pickup_points.js";
-import momoRouter from "./routes/payments.momo.js";
 import reportsPublicRouter from "./routes/reports.public.js";
 import paymentsImportRouter from "./routes/payments.import.js";
+
 // ====== Khởi tạo schema (nếu dùng MySQL)
 await ensureMySQLSchema();
 
@@ -87,19 +84,16 @@ app.use(
     immutable: false,
   })
 );
+
+/* ---------- Routers ---------- */
 app.use("/api/reports", reportsPublicRouter);
 app.use("/api", paymentsImportRouter);
-
-/* ---------- Webhooks ---------- */
 app.use("/api/webhooks", express.json({ type: "*/*" }), vietqrWebhook);
 
-/* ---------- Mount API routers ---------- */
 app.use("/api/site-settings", siteSettingsRouter);
-
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/auth", authResetRouter);
-
 app.use("/api/users", usersRouter);
 app.use("/api/overview", overviewRouter);
 app.use("/api/foods", foodsRouter);
@@ -107,8 +101,7 @@ app.use("/api/meals", mealsRouter);
 
 // Public campaigns
 app.use("/api/campaigns", campaignsRouter);
-
-// Admin campaigns (đÃ TÍNH tổng hợp số liệu cho trang Reports)
+// Admin campaigns (đã tổng hợp số liệu cho trang Reports)
 app.use("/api/admin/campaigns", adminCampaignsRouter);
 
 app.use("/api/donors", donorsRouter);
@@ -118,7 +111,7 @@ app.use("/api/shippers", shippersRouter);
 // Upload
 app.use("/api", uploadRouter);
 
-// Admin tổng hợp (giữ nguyên các route khác dưới /api/admin)
+// Admin tổng hợp
 app.use("/api/admin", adminRouter);
 
 // Payments

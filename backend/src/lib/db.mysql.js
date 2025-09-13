@@ -1,13 +1,11 @@
-﻿// src/lib/db.mysql.js (hoặc đường dẫn bạn đang dùng)
+// src/lib/db.mysql.js
 import mysql from "mysql2/promise";
 import "dotenv/config";
 
-const url = process.env.DATABASE_URL; // tùy chọn, nếu bạn dùng 1 biến URL
+const url = process.env.DATABASE_URL;
 let cfg = {};
 
 if (url) {
-  // Tip: mysql2 không parse URL trực tiếp; vẫn nên tách biến riêng.
-  // Bạn có thể dùng thư viện whatwg URL nếu muốn parse.
   const u = new URL(url);
   cfg = {
     host: u.hostname,
@@ -48,7 +46,7 @@ console.log(
   `[DB] using MySQL ${cfg.user}@${cfg.host}:${cfg.port}/${cfg.database} SSL=${!!ssl}`
 );
 
-// nhẹ nhàng retry để chờ DB sẵn sàng (cold start, network)
+// Nhẹ nhàng retry để chờ DB sẵn sàng (cold start, network)
 async function pingWithRetry(max = 5) {
   let lastErr;
   for (let i = 1; i <= max; i++) {
@@ -59,7 +57,7 @@ async function pingWithRetry(max = 5) {
     } catch (e) {
       lastErr = e;
       console.warn(`[DB] Connect attempt ${i}/${max} failed: ${e.code || e.message}`);
-      await new Promise((r) => setTimeout(r, i * 500)); // backoff
+      await new Promise((r) => setTimeout(r, i * 500));
     }
   }
   console.error("[DB] MySQL connect error:", lastErr?.code || lastErr?.message);
