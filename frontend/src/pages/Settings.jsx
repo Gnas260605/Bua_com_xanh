@@ -336,16 +336,24 @@ export default function Settings() {
       {/* === PROFILE === */}
       <Card className="p-6 border rounded-2xl shadow-sm">
         <div className="flex items-center justify-between mb-5">
-          <div className="text-xl font-semibold">Hồ sơ cá nhân</div>
+          <div className="text-xl font-semibold text-slate-900">Hồ sơ cá nhân</div>
           <div className="flex items-center gap-3">
-            <div className="text-sm text-gray-500 hidden sm:flex items-center gap-2">
+            <div className="text-sm font-medium text-slate-700 hidden sm:flex items-center gap-2">
               <ShieldCheck size={16} /> Thông tin được bảo vệ
             </div>
             {!isEditing ? (
               <Button type="button" onClick={startEdit}>Chỉnh sửa</Button>
             ) : (
               <div className="flex items-center gap-2">
-                <Button type="button" variant="secondary" onClick={cancelEdit}>Hủy</Button>
+                {/* CHỈ ĐỔI MÀU CHỮ NÚT HỦY */}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={cancelEdit}
+                  className="!text-red-600 hover:!text-red-700"
+                >
+                  Hủy
+                </Button>
                 <Button type="button" onClick={onSaveProfile} disabled={saving}>
                   {saving ? "Đang lưu..." : "Lưu thay đổi"}
                 </Button>
@@ -355,7 +363,7 @@ export default function Settings() {
         </div>
 
         {profileLoading ? (
-          <div className="text-sm text-gray-500">Đang tải hồ sơ...</div>
+          <div className="text-sm font-medium text-slate-700">Đang tải hồ sơ...</div>
         ) : (
           <form onSubmit={onSaveProfile} className="space-y-5">
             <div className="flex items-center gap-5">
@@ -368,7 +376,8 @@ export default function Settings() {
                   onChange={(e) => setField("avatar_url", e.target.value)}
                   disabled={disabled}
                 />
-                <label className={`inline-flex ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+                {/* BỎ opacity-50 VÀ CHỈ ĐỔI MÀU CHỮ NÚT TẢI ẢNH */}
+                <label className={`inline-flex ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
                   <input
                     type="file"
                     accept="image/*"
@@ -376,14 +385,16 @@ export default function Settings() {
                     onChange={(e) => onPickAvatar(e.target.files?.[0])}
                     disabled={disabled}
                   />
-                  <span className="btn border px-3 py-2 rounded-lg">Tải ảnh</span>
+                  <span className="btn border px-3 py-2 rounded-lg text-red-600 hover:text-red-700">
+                    Tải ảnh
+                  </span>
                 </label>
               </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <User size={16} /> Họ và tên
                 </label>
                 <input
@@ -395,7 +406,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <Mail size={16} /> Email
                 </label>
                 <input className="input w-full bg-gray-100 cursor-not-allowed" value={form.email} disabled />
@@ -404,7 +415,7 @@ export default function Settings() {
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <Phone size={16} /> Số điện thoại
                 </label>
                 <input
@@ -415,7 +426,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <Image size={16} /> Ảnh đại diện (URL)
                 </label>
                 <input
@@ -429,7 +440,7 @@ export default function Settings() {
             </div>
 
             <div>
-              <label className="text-sm text-gray-600 mb-1 block">Địa chỉ</label>
+              <label className="text-sm font-medium text-slate-800 mb-1 block">Địa chỉ</label>
               <textarea
                 className="input w-full"
                 value={form.address}
@@ -440,7 +451,7 @@ export default function Settings() {
 
             <div className="grid md:grid-cols-3 gap-4 items-end">
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <MapPin size={16} /> Vĩ độ (lat)
                 </label>
                 <input
@@ -452,7 +463,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 mb-1">
                   <Globe size={16} /> Kinh độ (lng)
                 </label>
                 <input
@@ -485,14 +496,14 @@ export default function Settings() {
 
       {/* SECURITY (Password change with double entry) */}
       <Card className="p-6 border rounded-2xl shadow-sm">
-        <div className="text-xl font-semibold mb-1">Bảo mật & Đăng nhập</div>
-        <p className="text-sm text-gray-600 mb-4">
+        <div className="text-xl font-semibold text-slate-900 mb-1">Bảo mật & Đăng nhập</div>
+        <p className="text-sm font-medium text-slate-700 mb-4">
           Đổi mật khẩu bằng cách nhập mật khẩu mới 2 lần. Sau khi đổi thành công, hệ thống sẽ gửi email thông báo.
         </p>
 
         <div className="grid md:grid-cols-2 gap-5">
           <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600"><Lock size={16}/> Đổi mật khẩu</label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800"><Lock size={16}/> Đổi mật khẩu</label>
 
             <div className="space-y-2">
               <div className="relative">
@@ -505,7 +516,7 @@ export default function Settings() {
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-700"
                   onClick={() => setShowPw(s => !s)}
                   aria-label={showPw ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                 >
@@ -523,7 +534,7 @@ export default function Settings() {
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-700"
                   onClick={() => setShowPw2(s => !s)}
                   aria-label={showPw2 ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                 >
@@ -532,7 +543,7 @@ export default function Settings() {
               </div>
 
               {!!pw1 && (
-                <p className={`text-xs ${validatePassword(pw1) ? "text-emerald-600" : "text-red-600"}`}>
+                <p className={`text-xs ${validatePassword(pw1) ? "text-emerald-700" : "text-red-600"}`}>
                   {validatePassword(pw1) ? "Mật khẩu hợp lệ" : "Mật khẩu tối thiểu 8 ký tự"}
                 </p>
               )}
@@ -546,27 +557,27 @@ export default function Settings() {
               {changing ? "Đang đổi mật khẩu..." : "Đổi mật khẩu"}
             </Button>
 
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-slate-600">
               Vì lý do bảo mật, bạn có thể sẽ buộc đăng nhập lại sau khi đổi mật khẩu.
             </p>
           </div>
 
           <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600"><LogOut size={16}/> Phiên đăng nhập</label>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800"><LogOut size={16}/> Phiên đăng nhập</label>
             <div className="rounded-lg border p-3 bg-gray-50">
-              <div className="text-sm mb-2 flex items-center gap-2">
+              <div className="text-sm font-medium text-slate-800 mb-2">
                 {sessLoading ? "Đang tải phiên..." : "Phiên hiện tại và các thiết bị đã đăng nhập:"}
               </div>
               <ul className="space-y-1 max-h-36 overflow-auto pr-1">
                 {(sessions ?? []).map((s) => (
-                  <li key={s.id} className="text-sm text-gray-700">
-                    <span className={s.current ? "font-medium" : ""}>
+                  <li key={s.id} className="text-sm">
+                    <span className={s.current ? "font-semibold text-slate-900" : "text-slate-800"}>
                       {s.device || "Thiết bị"} – {s.ip || "?"} – {s.last_seen || ""}{s.current ? " (hiện tại)" : ""}
                     </span>
                   </li>
                 ))}
                 {!sessions?.length && !sessLoading && (
-                  <li className="text-sm text-gray-500">Không có dữ liệu phiên (API tùy chọn).</li>
+                  <li className="text-sm text-slate-600">Không có dữ liệu phiên (API tùy chọn).</li>
                 )}
               </ul>
               <div className="pt-2">
@@ -580,7 +591,7 @@ export default function Settings() {
       {/* HISTORY */}
       <Card className="p-6 border rounded-2xl shadow-sm">
         <div className="flex items-center justify-between">
-          <div className="text-xl font-semibold">Lịch sử hoạt động</div>
+          <div className="text-xl font-semibold text-slate-900">Lịch sử hoạt động</div>
           <History size={18}/>
         </div>
         <div className="grid lg:grid-cols-3 gap-6 mt-4">
@@ -599,8 +610,8 @@ export default function Settings() {
 
       {/* PRIVACY */}
       <Card className="p-6 border rounded-2xl shadow-sm">
-        <div className="text-xl font-semibold mb-1">Quyền riêng tư & Tài khoản</div>
-        <p className="text-sm text-gray-600 mb-4">Bạn có thể tải dữ liệu hoặc xóa tài khoản của mình.</p>
+        <div className="text-xl font-semibold text-slate-900 mb-1">Quyền riêng tư & Tài khoản</div>
+        <p className="text-sm font-medium text-slate-700 mb-4">Bạn có thể tải dữ liệu hoặc xóa tài khoản của mình.</p>
         <div className="flex flex-wrap gap-3">
           <Button onClick={exportData} className="inline-flex items-center gap-2">
             <Download size={16}/> Tải dữ liệu của tôi
@@ -612,9 +623,9 @@ export default function Settings() {
 
         <dialog id="delete-dlg" className="rounded-2xl p-0">
           <div className="p-6 w-[min(92vw,480px)]">
-            <div className="text-lg font-semibold mb-1">Xóa tài khoản</div>
+            <div className="text-lg font-semibold text-slate-900 mb-1">Xóa tài khoản</div>
             <p className="text-sm text-red-600 mb-3">Hành động này không thể hoàn tác. Dữ liệu của bạn sẽ bị xóa vĩnh viễn.</p>
-            <p className="text-sm text-gray-600 mb-3">Gõ <span className="font-mono bg-gray-100 px-1 py-0.5 rounded">XOA TAI KHOAN</span> để xác nhận.</p>
+            <p className="text-sm text-slate-700 mb-3">Gõ <span className="font-mono bg-gray-100 px-1 py-0.5 rounded">XOA TAI KHOAN</span> để xác nhận.</p>
             <input className="input w-full mb-4" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="XOA TAI KHOAN" />
             <div className="flex items-center justify-end gap-3">
               <Button variant="secondary" onClick={() => document.getElementById("delete-dlg").close()}>Hủy</Button>
@@ -636,20 +647,20 @@ function fmtVND(n) {
 function SectionList({ title, rows, empty, link }) {
   return (
     <div className="rounded-xl border bg-white/70">
-      <div className="px-4 py-3 border-b font-medium">{title}</div>
+      <div className="px-4 py-3 border-b font-semibold text-slate-900">{title}</div>
       <ul className="divide-y">
         {(rows && rows.length) ? rows.map((r) => (
           <li key={r.id} className="px-4 py-3 text-sm">
-            <div className="font-medium">{r.name || r.title || r.item_title || "—"}</div>
-            <div className="text-xs text-gray-500">{r.at || r.created_at || r.time || ""}</div>
+            <div className="font-medium text-slate-800">{r.name || r.title || r.item_title || "—"}</div>
+            <div className="text-xs text-slate-600">{r.at || r.created_at || r.time || ""}</div>
           </li>
         )) : (
-          <li className="px-4 py-6 text-sm text-gray-500">{empty}</li>
+          <li className="px-4 py-6 text-sm text-slate-600">{empty}</li>
         )}
       </ul>
       {link && (
         <div className="px-4 py-2 text-sm">
-          <Link className="inline-flex items-center gap-1 text-emerald-700 hover:underline" to={link.to}>
+          <Link className="inline-flex items-center gap-1 text-emerald-700 font-medium hover:underline" to={link.to}>
             {link.label} <ArrowRight size={14}/>
           </Link>
         </div>
@@ -663,7 +674,7 @@ function DangerButton({ children, disabled, onClick }) {
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-white
+      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-white font-semibold
         ${disabled ? "bg-red-300 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"}`}
       type="button"
     >

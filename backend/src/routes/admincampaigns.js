@@ -1,4 +1,4 @@
-// backend/src/routes/admincampaigns.js  (ESM)
+// backend/src/routes/admincampaigns.js (ESM)
 import { Router } from "express";
 import crypto from "crypto";
 import "dotenv/config";
@@ -51,7 +51,7 @@ async function dbRun(sql, params = []) {
       if (typeof db.run === "function") return await db.run(sql, params);
       if (typeof db.query === "function") {
         const [result] = await db.query(sql, params);
-        return result; // có .insertId với INSERT
+        return result; // .insertId for INSERT
       }
       throw new Error("MySQL adapter missing .run/.query");
     }
@@ -63,10 +63,7 @@ async function dbRun(sql, params = []) {
 
 /* ========================= Utils ========================= */
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-const toNum = (v, d = 0) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-};
+const toNum = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const safe = (v, d = "") => (v == null ? d : String(v));
 function parseJson(raw, fallback) {
   try {
@@ -88,15 +85,14 @@ function normalizeTags(raw) {
 }
 
 /* ========================= Meta helpers ========================= */
-/** Chuẩn hóa meta để lưu trong cột tags (JSON) */
 function buildMetaJson(c = {}) {
   const paymentMethod = c.payment?.method || c.payment_method || "momo"; // momo | vietqr | custom_qr
   const payment =
     paymentMethod === "momo"
       ? { method: "momo" }
       : paymentMethod === "custom_qr"
-      ? { method: "custom_qr", qr_url: c.payment?.qr_url || c.payment_qr_url || "" }
-      : {
+        ? { method: "custom_qr", qr_url: c.payment?.qr_url || c.payment_qr_url || "" }
+        : {
           method: "vietqr",
           bank: c.payment?.bank || c.payment_bank || "",
           account: c.payment?.account || c.payment_account || "",
@@ -115,16 +111,28 @@ function buildMetaJson(c = {}) {
       target_qty: toNum(c.meal_target_qty ?? c.meta?.meal?.target_qty, 0),
       received_qty: toNum(c.meal_received_qty ?? c.meta?.meal?.received_qty, 0),
       wish: c.meal_wish || c.meta?.meal?.wish || "",
+      // có thể lưu thêm price vào meta để tương thích FE cũ
+      price: toNum(c.meal_price ?? c.meta?.meal?.price, 0),
     },
   };
   return JSON.stringify(meta);
 }
 
-/** Chuẩn hóa 1 row → object trả cho FE */
+/** Row → FE object (ưu tiên cột nếu có, fallback về tags) */
 function mapCampaignRow(r) {
   const meta = parseJson(r.tags, {});
   const type = safe(r.type ?? meta?.type ?? "money");
-  const cover_url = r.cover || r.cover_url || "";
+
+  const cover_url = r.cover_url || r.cover || "";
+  const target_amount = toNum(r.target_amount ?? r.goal, 0);
+  const raised_amount = toNum(r.raised_amount ?? r.raised, 0);
+
+  // meal columns + fallback meta
+  const meal_price = toNum(r.meal_price ?? meta?.meal?.price, 0);
+  const meal_received_qty = toNum(r.meal_received_qty ?? meta?.meal?.received_qty, 0);
+  const meal_target_qty = toNum(meta?.meal?.target_qty, 0);
+  const meal_unit = meta?.meal?.unit || "phần";
+
   const payment_method = meta?.payment?.method || "momo";
 
   return {
@@ -132,8 +140,8 @@ function mapCampaignRow(r) {
     title: r.title,
     description: r.description,
     location: r.location,
-    target_amount: toNum(r.goal ?? r.target_amount, 0),
-    raised_amount: toNum(r.raised ?? r.raised_amount, 0),
+    target_amount,
+    raised_amount,
     supporters: toNum(r.supporters, 0),
     status: r.status,
     created_at: r.created_at,
@@ -144,17 +152,18 @@ function mapCampaignRow(r) {
     meta,
     type,
     payment_method,
-    meal_unit: meta?.meal?.unit || "phần",
-    meal_target_qty: toNum(meta?.meal?.target_qty, 0),
-    meal_received_qty: toNum(meta?.meal?.received_qty, 0),
+    meal_unit,
+    meal_target_qty,
+    meal_received_qty,
+    meal_price,
     start_at: meta?.start_at || null,
     end_at: meta?.end_at || null,
     payment: meta?.payment || null,
-    tags: normalizeTags(r.tags), // luôn mảng (giữ để tương thích)
+    tags: normalizeTags(r.tags),
   };
 }
 
-/* ========================= Init / Migrations ========================= */
+/* ========================= Init / Migrations (giữ nguyên) ========================= */
 async function ensureDonationsTable() {
   if (useMySQL) {
     await dbRun(
@@ -196,8 +205,6 @@ async function ensureDonationsTable() {
     );
   }
 }
-
-/** Thêm cột `type` nếu chưa có & tạo index */
 async function ensureCampaignTypeColumn() {
   try {
     if (useMySQL) {
@@ -205,14 +212,9 @@ async function ensureCampaignTypeColumn() {
       await dbRun(`CREATE INDEX idx_campaigns_type ON campaigns (\`type\`)`);
     } else {
       await dbRun(`ALTER TABLE campaigns ADD COLUMN type TEXT`);
-      // có thể thêm index nếu cần
     }
-  } catch {
-    // đã tồn tại -> bỏ qua
-  }
+  } catch { }
 }
-
-/** Đồng bộ dữ liệu cũ: copy tags.type → cột type */
 async function reconcileCampaignTypes() {
   try {
     if (useMySQL) {
@@ -224,7 +226,6 @@ async function reconcileCampaignTypes() {
            AND ( \`type\` IS NULL OR \`type\` = '' )`
       );
     } else {
-      // SQLite: làm an toàn bằng JS để không phụ thuộc json1
       const rows = await dbAll(`SELECT id, tags, type FROM campaigns`, []);
       for (const r of rows) {
         const meta = parseJson(r.tags, {});
@@ -243,13 +244,14 @@ await ensureDonationsTable();
 await ensureCampaignTypeColumn();
 await reconcileCampaignTypes();
 
-/* ========================= Core helpers ========================= */
+/* ========================= Core helpers (giữ nguyên logic) ========================= */
 async function applyDonationToCampaign({ campaign_id, type = "money", amount = 0, qty = 0 }) {
   const exists = await dbGet(`SELECT id, tags FROM campaigns WHERE id=?`, [campaign_id]);
   if (!exists) return;
 
   if (type === "money") {
-    await dbRun(`UPDATE campaigns SET raised = COALESCE(raised,0) + ? WHERE id=?`, [
+    await dbRun(`UPDATE campaigns SET raised = COALESCE(raised,0) + ?, raised_amount = COALESCE(raised_amount,0) + ? WHERE id=?`, [
+      toNum(amount, 0),
       toNum(amount, 0),
       campaign_id,
     ]);
@@ -257,42 +259,37 @@ async function applyDonationToCampaign({ campaign_id, type = "money", amount = 0
     const meta = parseJson(exists?.tags, {});
     meta.meal = meta.meal || {};
     meta.meal.received_qty = toNum(meta?.meal?.received_qty, 0) + toNum(qty, 0);
-    await dbRun(`UPDATE campaigns SET tags=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [
-      JSON.stringify(meta),
-      campaign_id,
-    ]);
+    await dbRun(
+      `UPDATE campaigns SET tags=?, meal_received_qty = COALESCE(meal_received_qty,0) + ?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [JSON.stringify(meta), toNum(qty, 0), campaign_id]
+    );
   }
 }
-
 async function recalcCampaignFromDonations(campaign_id) {
   const money = await dbGet(
     `SELECT COALESCE(SUM(amount),0) AS s
-     FROM donations
-     WHERE campaign_id=? AND status='success' AND type='money'`,
+     FROM donations WHERE campaign_id=? AND status='success' AND type='money'`,
     [campaign_id]
   );
   const meal = await dbGet(
     `SELECT COALESCE(SUM(qty),0) AS q
-     FROM donations
-     WHERE campaign_id=? AND status='success' AND type='meal'`,
+     FROM donations WHERE campaign_id=? AND status='success' AND type='meal'`,
     [campaign_id]
   );
 
-  await dbRun(`UPDATE campaigns SET raised=? WHERE id=?`, [toNum(money?.s, 0), campaign_id]);
+  await dbRun(`UPDATE campaigns SET raised=?, raised_amount=? WHERE id=?`, [toNum(money?.s, 0), toNum(money?.s, 0), campaign_id]);
 
   const row = await dbGet(`SELECT tags FROM campaigns WHERE id=?`, [campaign_id]);
   const meta = parseJson(row?.tags, {});
   meta.meal = meta.meal || {};
   meta.meal.received_qty = toNum(meal?.q, 0);
-  await dbRun(`UPDATE campaigns SET tags=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [
-    JSON.stringify(meta),
-    campaign_id,
-  ]);
+  await dbRun(
+    `UPDATE campaigns SET tags=?, meal_received_qty=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+    [JSON.stringify(meta), toNum(meal?.q, 0), campaign_id]
+  );
 }
 
-/* ========================= GET / (list) =========================
-   query: q | status | type | sort | page | pageSize
-================================================================= */
+/* ========================= GET / (list) ========================= */
 router.get("/", async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();
@@ -315,7 +312,6 @@ router.get("/", async (req, res) => {
       params.push(status);
     }
     if (typeFilter) {
-      // lọc ngay ở SQL nếu có cột type
       where.push("LOWER(COALESCE(`type`, '')) = ?");
       params.push(typeFilter);
     }
@@ -333,7 +329,8 @@ router.get("/", async (req, res) => {
 
     const listSQL = `
       SELECT id, title, description, location, goal, raised, supporters,
-             tags, cover, status, created_at, updated_at, deadline, \`type\`
+             tags, cover, cover_url, status, created_at, updated_at, deadline, \`type\`,
+             target_amount, raised_amount, meal_price, meal_received_qty
       FROM campaigns
       ${whereSQL}
       ORDER BY ${orderSQL}
@@ -356,7 +353,7 @@ router.get("/stats", async (_req, res) => {
   try {
     const row = await dbGet(
       `SELECT COUNT(*) AS campaigns,
-              COALESCE(SUM(raised),0) AS raised,
+              COALESCE(SUM(raised_amount),COALESCE(SUM(raised),0)) AS raised,
               COALESCE(SUM(supporters),0) AS supporters,
               SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active
        FROM campaigns`,
@@ -381,7 +378,8 @@ router.get("/:id", async (req, res) => {
     const id = req.params.id;
     const row = await dbGet(
       `SELECT id, title, description, location, goal, raised, supporters,
-              tags, cover, status, created_at, updated_at, deadline, \`type\`
+              tags, cover, cover_url, status, created_at, updated_at, deadline, \`type\`,
+              target_amount, raised_amount, meal_price, meal_received_qty
        FROM campaigns WHERE id=?`,
       [id]
     );
@@ -434,12 +432,18 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
 
     const sql = `
       INSERT INTO campaigns (${useMySQL ? "" : "id,"}
-        title, description, location, goal, raised, supporters,
-        tags, cover, status, deadline, \`type\`, created_at
+        title, description, location,
+        goal, raised, supporters,
+        tags, cover, cover_url, status, deadline, \`type\`,
+        target_amount, raised_amount, meal_price, meal_received_qty,
+        created_at
       )
       VALUES (${useMySQL ? "" : "?, "}
-        ?,?,?,?,?,?,
-        ?,?,?,?,?,
+        ?,?,?,         -- title, description, location
+        ?,?, ?,        -- goal, raised, supporters
+        ?,?, ?,?, ?,   -- tags, cover, cover_url, status, deadline
+        ?,             -- type
+        ?,?, ?,?,      -- target_amount, raised_amount, meal_price, meal_received_qty
         ${useMySQL ? "CURRENT_TIMESTAMP" : "datetime('now')"}
       )`;
 
@@ -449,14 +453,19 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
       safe(c.title).trim(),
       safe(c.description),
       safe(c.location),
-      toNum(c.target_amount, 0),
-      toNum(c.raised_amount, 0),
+      toNum(c.target_amount, 0),          // goal
+      toNum(c.raised_amount, 0),          // raised
       toNum(c.supporters, 0),
       metaJson,
-      safe(c.cover_url),
+      safe(c.cover_url),                  // cover
+      safe(c.cover_url),                  // cover_url
       safe(c.status, "draft"),
       c.end_at ?? c.deadline ?? null,
-      typeForColumn
+      typeForColumn,
+      toNum(c.target_amount, 0),          // target_amount
+      toNum(c.raised_amount, 0),          // raised_amount
+      toNum(c.meal_price, 0),             // meal_price
+      toNum(c.meal_received_qty, 0)       // meal_received_qty
     );
 
     const result = await dbRun(sql, args);
@@ -464,7 +473,8 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
 
     const row = await dbGet(
       `SELECT id, title, description, location, goal, raised, supporters,
-              tags, cover, status, created_at, updated_at, deadline, \`type\`
+              tags, cover, cover_url, status, created_at, updated_at, deadline, \`type\`,
+              target_amount, raised_amount, meal_price, meal_received_qty
        FROM campaigns WHERE id=?`,
       [newId]
     );
@@ -488,11 +498,14 @@ router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     const typeForColumn = (c.meta?.type || c.type || "money").toString();
 
     const sql = `
-      UPDATE campaigns SET
-        title=?, description=?, location=?, goal=?, raised=?, supporters=?,
-        tags=?, cover=?, status=?, deadline=?, \`type\`=?,
-        updated_at=CURRENT_TIMESTAMP
-      WHERE id=?`;
+  UPDATE campaigns SET
+    title=?, description=?, location=?,
+    goal=?, raised=?, supporters=?,
+    tags=?, cover=?, cover_url=?, status=?, deadline=?, \`type\`=?,
+    target_amount=?, raised_amount=?, meal_price=?, meal_received_qty=?,
+    updated_at=CURRENT_TIMESTAMP
+  WHERE id=?`;
+
     const args = [
       safe(c.title).trim(),
       safe(c.description),
@@ -502,9 +515,14 @@ router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
       toNum(c.supporters, 0),
       metaJson,
       safe(c.cover_url ?? c.cover),
+      safe(c.cover_url ?? c.cover),
       safe(c.status, "draft"),
       c.end_at ?? c.deadline ?? null,
       typeForColumn,
+      toNum(c.target_amount ?? c.goal, 0),
+      toNum(c.raised_amount ?? c.raised, 0),
+      toNum(c.meal_price, 0),
+      toNum(c.meal_received_qty ?? parseJson(cur.tags, {})?.meal?.received_qty, 0),
       id,
     ];
 
@@ -512,7 +530,8 @@ router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
 
     const row = await dbGet(
       `SELECT id, title, description, location, goal, raised, supporters,
-              tags, cover, status, created_at, updated_at, deadline, \`type\`
+              tags, cover, cover_url, status, created_at, updated_at, deadline, \`type\`,
+              target_amount, raised_amount, meal_price, meal_received_qty
        FROM campaigns WHERE id=?`,
       [id]
     );
@@ -536,12 +555,12 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
   }
 });
 
-/* ============ POST /:id/donations (add manual donation) ============ */
+/* ============ POST /:id/donations (manual add) ============ */
 router.post("/:id/donations", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const campaign_id = req.params.id;
     const {
-      type = "money", // 'money' | 'meal'
+      type = "money",
       amount = 0,
       qty = 0,
       currency = "VND",
@@ -597,14 +616,15 @@ router.post("/:id/donations", requireAuth, requireRole("admin"), async (req, res
   }
 });
 
-/* ============ POST /:id/recalc (tính lại từ donations) ============ */
+/* ============ POST /:id/recalc ============ */
 router.post("/:id/recalc", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const id = req.params.id;
     await recalcCampaignFromDonations(id);
     const row = await dbGet(
       `SELECT id, title, description, location, goal, raised, supporters,
-              tags, cover, status, created_at, updated_at, deadline, \`type\`
+              tags, cover, cover_url, status, created_at, updated_at, deadline, \`type\`,
+              target_amount, raised_amount, meal_price, meal_received_qty
        FROM campaigns WHERE id=?`,
       [id]
     );

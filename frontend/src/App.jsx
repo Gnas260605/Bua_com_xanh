@@ -18,6 +18,13 @@ const Recipients = lazy(() => import("./pages/Recipients"));
 const Shippers = lazy(() => import("./pages/Shippers"));
 const Reports = lazy(() => import("./pages/Reports"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Delivery = lazy(() => import("./pages/Delivery"));
+
+// ✨ Donor feature pages (cho 4 nút)
+const DonorDonate = lazy(() => import("./pages/DonorDonate"));   // /donor/donate
+const DonorHistory = lazy(() => import("./pages/DonorHistory")); // /donor/history (+ /donor/donations)
+const DonorPickup  = lazy(() => import("./pages/DonorPickup"));  // /donor/pickup
+const SupportChat  = lazy(() => import("./pages/SupportChat"));  // /support/chat
 
 // Auth pages
 const Login = lazy(() => import("./pages/Login"));
@@ -55,7 +62,6 @@ function Loader({ message = "Đang tải..." }) {
 function ScrollToTop() {
   const location = useLocation();
   useEffect(() => {
-    // behavior: 'auto' để tránh lỗi không chuẩn
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [location.pathname, location.search, location.hash]);
   return null;
@@ -89,10 +95,9 @@ class ErrorBoundary extends React.Component {
    Route guards
 ======================== */
 function useAuthState() {
-  // Chịu được nhiều biến thể context: {user, loading} hoặc {user, isLoading}
   const ctx = useAuth?.() || {};
   const user = ctx.user ?? null;
-  const loading = ctx.loading ?? ctx.isLoading ?? (ctx.user === undefined); // undefined => đang nạp
+  const loading = ctx.loading ?? ctx.isLoading ?? (ctx.user === undefined);
   return { user, loading };
 }
 
@@ -181,7 +186,21 @@ export default function App() {
               <Route path="campaigns" element={<Campaigns />} />
               <Route path="campaigns/:id" element={<CampaignDetail />} />
               <Route path="campaigns/:id/report" element={<CampaignReport />} />
+
+              {/* Trang tổng Nhà hảo tâm */}
               <Route path="donors" element={<Donors />} />
+
+              {/* ✨ Các route thực thi 4 nút */}
+              <Route path="donor/donate" element={<DonorDonate />} />
+              <Route path="donor/history" element={<DonorHistory />} />
+              <Route path="donor/donations" element={<DonorHistory />} /> {/* alias cho "Xem tất cả" */}
+              <Route path="donor/pickup" element={<DonorPickup />} />
+              <Route path="support/chat" element={<SupportChat />} />
+
+              {/* Giao – Nhận */}
+              <Route path="delivery" element={<Delivery />} />
+              <Route path="deliveries" element={<Navigate to="/delivery" replace />} />
+
               <Route path="recipients" element={<Recipients />} />
               <Route path="shippers" element={<Shippers />} />
               <Route path="reports" element={<Reports />} />

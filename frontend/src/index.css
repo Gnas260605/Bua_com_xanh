@@ -26,3 +26,21 @@
       #f8fafc;
   }
 }
+/* ==== BỔ SUNG NHẸ, KHÔNG ĐỔI LAYOUT ==== */
+@layer components {
+  .heading-strong { @apply text-slate-900 font-semibold tracking-tight; }
+  .label-strong   { @apply text-[13px] font-medium text-slate-800; }
+
+  .para-muted     { @apply text-sm text-slate-700; }
+
+  
+  .hint-muted     { @apply text-xs text-slate-700; }
+
+  .card-contrast  { @apply border border-slate-300 dark:border-slate-600; }
+
+  .row-title      { @apply font-medium text-slate-900; }
+  .row-sub        { @apply text-xs text-slate-700; }
+}
+@layer base {
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+}

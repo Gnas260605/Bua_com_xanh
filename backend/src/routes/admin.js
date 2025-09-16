@@ -43,7 +43,7 @@ async function run(sql, params = []) {
   throw new Error("adapter missing run/query");
 }
 
-// Try helpers (thử nhiều biến thể SQL – dừng ở biến thể đầu chạy thành công)
+// Try helpers
 async function tryAll(variants) {
   for (const { sql, params = [] } of variants) {
     try { const rows = await all(sql, params); return rows; } catch { /* noop */ }
@@ -98,7 +98,7 @@ async function getColumnType(table, column) {
 let auditPkMode = "auto_inc"; // "auto_inc" | "uuid"
 
 async function ensureSchemas() {
-  // ===== Core tables (tạo nếu thiếu) =====
+  // ——— Core tables (đã có trong dự án) ———
   if (useMySQL) {
     await run(`CREATE TABLE IF NOT EXISTS reports (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -192,7 +192,6 @@ async function ensureSchemas() {
       actor_id TEXT, action TEXT, target_id TEXT,
       detail TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       reporter_id TEXT, target_user_id TEXT, target_item_id TEXT,
@@ -200,12 +199,10 @@ async function ensureSchemas() {
       notes TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
       resolved_at TEXT
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS site_settings (
       k TEXT PRIMARY KEY, v TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS announcements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL, content TEXT NOT NULL,
@@ -214,7 +211,6 @@ async function ensureSchemas() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       parent_id INTEGER,
@@ -228,7 +224,6 @@ async function ensureSchemas() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS task_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id INTEGER NOT NULL,
@@ -236,7 +231,6 @@ async function ensureSchemas() {
       content TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS pickup_points (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -246,7 +240,6 @@ async function ensureSchemas() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT
     )`).catch(()=>{});
-
     await run(`CREATE TABLE IF NOT EXISTS cms_pages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       slug TEXT NOT NULL UNIQUE,
@@ -284,12 +277,14 @@ async function ensureSchemas() {
 
   // campaigns.deadline (optional)
   if (useMySQL) {
-    if (!(await hasColumn("campaigns", "deadline"))) {
-      await run(`ALTER TABLE campaigns ADD COLUMN deadline DATETIME NULL`).catch(()=>{});
-      await run(`ALTER TABLE campaigns ADD INDEX idx_campaigns_deadline (deadline)`).catch(()=>{});
-    }
+    try {
+      if (!(await hasColumn("campaigns", "deadline"))) {
+        await run(`ALTER TABLE campaigns ADD COLUMN deadline DATETIME NULL`).catch(()=>{});
+        await run(`ALTER TABLE campaigns ADD INDEX idx_campaigns_deadline (deadline)`).catch(()=>{});
+      }
+    } catch {/* ignore if table doesn't exist */}
   } else {
-    await run(`ALTER TABLE campaigns ADD COLUMN deadline TEXT`).catch(()=>{});
+    try { await run(`ALTER TABLE campaigns ADD COLUMN deadline TEXT`).catch(()=>{}); } catch {}
   }
 }
 await ensureSchemas();
@@ -321,6 +316,45 @@ async function logAudit(actorId, action, targetId, detail) {
   } catch (e) {
     console.warn("[audit] skipped:", e.code || e.message);
   }
+}
+
+/* =========================
+   Role helpers (sync users.role <-> user_roles)
+========================= */
+async function getUserRoles(userId) {
+  const rows = await all("SELECT role FROM user_roles WHERE user_id=?", [userId]).catch(()=>[]);
+  return rows.map(r => String(r.role));
+}
+async function addUserRole(userId, role) {
+  if (!role) return;
+  const params = [userId, role];
+  if (useMySQL) {
+    await run("INSERT IGNORE INTO user_roles (user_id, role) VALUES (?,?)", params).catch(()=>{});
+  } else {
+    await run("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?,?)", params).catch(()=>{});
+  }
+}
+async function removeUserRole(userId, role) {
+  if (!role) return;
+  await run("DELETE FROM user_roles WHERE user_id=? AND role=?", [userId, role]).catch(()=>{});
+}
+async function setUserRoles(userId, roles) {
+  // roles: string | string[]
+  const list = Array.isArray(roles) ? roles : (roles ? [String(roles)] : []);
+  const current = await getUserRoles(userId);
+
+  // add missing
+  for (const r of list) {
+    if (!current.includes(r)) await addUserRole(userId, r);
+  }
+  // remove extra
+  for (const r of current) {
+    if (!list.includes(r)) await removeUserRole(userId, r);
+  }
+
+  // keep users.role for backward-compat (first role or null)
+  const main = list[0] || null;
+  if (main !== null) await run("UPDATE users SET role=? WHERE id=?", [main, userId]).catch(()=>{});
 }
 
 /* =========================
@@ -363,31 +397,79 @@ admin.get("/users", requireAuth, requireRole("admin"), async (req, res) => {
   if (status) { where.push("status=?"); params.push(status); }
   const whereSql = where.length ? "WHERE " + where.join(" AND ") : "";
 
-  const items = await all(
+  let items = await all(
     "SELECT id,email,name,avatar_url,role,address,phone,status,created_at FROM users " +
     whereSql + " ORDER BY created_at DESC LIMIT ? OFFSET ?",
     [...params, pageSize, offset]
   ).catch(()=>[]);
   const cnt = await get("SELECT COUNT(*) AS total FROM users " + whereSql, params).catch(()=>({ total: 0 }));
+
+  // kèm danh sách roles (user_roles) — không phá API cũ
+  for (const u of items) {
+    u.roles = await getUserRoles(u.id).catch(()=>[]);
+  }
+
   res.json({ items, total: Number(cnt?.total ?? 0), page, pageSize });
 });
+
+// Update user (name/status + role[s])
 admin.patch("/users/:id", requireAuth, requireRole("admin"), async (req, res) => {
   const uid = req.params.id;
-  const { name, role, status } = req.body || {};
+  const { name, role, roles, status } = req.body || {};
+
+  // 1) update basic fields
   const set = [], params = [];
   if (name   !== undefined) { set.push("name=?");   params.push(String(name)); }
-  if (role   !== undefined) { set.push("role=?");   params.push(String(role)); }
   if (status !== undefined) { set.push("status=?"); params.push(String(status)); }
-  if (!set.length) return res.json({ ok: true });
-  params.push(uid);
-  await run("UPDATE users SET " + set.join(", ") + " WHERE id=?", params).catch(()=>{});
-  await logAudit(req.user?.id, "admin.update_user", uid, { name, role, status });
+  if (set.length) {
+    params.push(uid);
+    await run("UPDATE users SET " + set.join(", ") + " WHERE id=?", params).catch(()=>{});
+  }
+
+  // 2) roles sync: nếu truyền "roles" (array) → ưu tiên; else nếu có "role" (string) → dùng 1 phần tử
+  if (roles !== undefined || role !== undefined) {
+    const next = roles !== undefined ? roles : (role !== undefined ? [String(role)] : []);
+    await setUserRoles(uid, next);
+  }
+
+  await logAudit(req.user?.id, "admin.update_user", uid, { name, status, roles: roles ?? role });
+
   const row = await get(
     "SELECT id,email,name,avatar_url,role,address,phone,status,created_at FROM users WHERE id=?",
     [uid]
   ).catch(()=>null);
+  if (row) row.roles = await getUserRoles(uid).catch(()=>[]);
   res.json(row ?? { ok: true });
 });
+
+// Add one role
+admin.post("/users/:id/roles", requireAuth, requireRole("admin"), async (req, res) => {
+  const uid = req.params.id;
+  const r = String(req.body?.role || "").trim();
+  if (!r) return res.status(400).json({ message: "Thiếu role" });
+  await addUserRole(uid, r);
+  // đảm bảo users.role có giá trị nếu đang rỗng
+  const u = await get("SELECT role FROM users WHERE id=?", [uid]).catch(()=>null);
+  if (!u?.role) await run("UPDATE users SET role=? WHERE id=?", [r, uid]).catch(()=>{});
+  await logAudit(req.user?.id, "admin.add_user_role", uid, { role: r });
+  res.json({ ok: true, roles: await getUserRoles(uid) });
+});
+
+// Remove one role
+admin.delete("/users/:id/roles/:role", requireAuth, requireRole("admin"), async (req, res) => {
+  const uid = req.params.id;
+  const r = req.params.role;
+  await removeUserRole(uid, r);
+  // nếu users.role đúng bằng role vừa xoá → cập nhật lại theo role còn lại
+  const remain = await getUserRoles(uid);
+  if (!remain.includes((await get("SELECT role FROM users WHERE id=?", [uid]) )?.role)) {
+    const main = remain[0] || null;
+    if (main !== null) await run("UPDATE users SET role=? WHERE id=?", [main, uid]).catch(()=>{});
+  }
+  await logAudit(req.user?.id, "admin.remove_user_role", uid, { role: r });
+  res.json({ ok: true, roles: remain });
+});
+
 admin.post("/users/:id/lock",   requireAuth, requireRole("admin"), async (req, res) => {
   await run("UPDATE users SET status='locked' WHERE id=?", [req.params.id]).catch(()=>{});
   await logAudit(req.user?.id, "admin.lock_user", req.params.id, {});
@@ -400,6 +482,8 @@ admin.post("/users/:id/unlock", requireAuth, requireRole("admin"), async (req, r
 });
 admin.delete("/users/:id",      requireAuth, requireRole("admin"), async (req, res) => {
   await run("UPDATE users SET status='deleted' WHERE id=?", [req.params.id]).catch(()=>{});
+  // xoá role mapping để sạch dữ liệu
+  await run("DELETE FROM user_roles WHERE user_id=?", [req.params.id]).catch(()=>{});
   await logAudit(req.user?.id, "admin.delete_user", req.params.id, {});
   res.json({ ok: true });
 });
@@ -1090,6 +1174,7 @@ admin.get("/backup", requireAuth, requireRole("admin"), async (_req, res) => {
   await grab("tasks", "SELECT * FROM tasks");
   await grab("task_comments", "SELECT * FROM task_comments");
   await grab("reports", "SELECT * FROM reports");
+  await grab("user_roles", "SELECT * FROM user_roles");
   res.json({ ok: true, exported_at: new Date().toISOString(), tables: pack });
 });
 admin.post("/restore", requireAuth, requireRole("admin"), async (req, res) => {
@@ -1109,11 +1194,12 @@ admin.post("/restore", requireAuth, requireRole("admin"), async (req, res) => {
   await logAudit(req.user?.id, "admin.restore_json", null, { tables: keys });
   res.json({ ok: true, imported: keys.length });
 });
+
 /* ======================================================================
-   13) CAMPAIGNS — list (MySQL-safe LIMIT/OFFSET, no-cache, fallback)
+   13) CAMPAIGNS — list
 ====================================================================== */
 admin.get("/campaigns", requireAuth, requireRole("admin"), async (req, res) => {
-  res.set("Cache-Control", "no-store"); // tránh 304
+  res.set("Cache-Control", "no-store");
 
   const q        = String(req.query.q || "").trim();
   const status   = String(req.query.status || "").trim();
@@ -1121,23 +1207,19 @@ admin.get("/campaigns", requireAuth, requireRole("admin"), async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 10)));
   const offset   = (page - 1) * pageSize;
 
-  // WHERE
   const where = [];
   const params = [];
   if (q)     { where.push("(title LIKE ? OR description LIKE ?)"); params.push(`%${q}%`, `%${q}%`); }
   if (status){ where.push("status = ?");                           params.push(status); }
   const W = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  // Inline LIMIT/OFFSET
   const LIMIT  = pageSize | 0;
   const OFFSET = offset  | 0;
 
   try {
-    // COUNT (không nuốt lỗi)
     const cntRow = await get(`SELECT COUNT(*) AS total FROM campaigns ${W}`, params);
     const total = Number(cntRow?.total || 0);
 
-    // SELECT danh sách (chỉ dùng các cột chắc chắn có; nếu thiếu thì thêm ALTER ở bước 3)
     let items = await all(
       `
       SELECT
@@ -1158,7 +1240,6 @@ admin.get("/campaigns", requireAuth, requireRole("admin"), async (req, res) => {
       params
     );
 
-    // nếu total>0 mà items rỗng → thử fallback không WHERE
     if (total > 0 && (!items || items.length === 0)) {
       items = await all(
         `
@@ -1181,7 +1262,6 @@ admin.get("/campaigns", requireAuth, requireRole("admin"), async (req, res) => {
       console.warn("[admin/campaigns] Fallback query used. total:", total, "items:", items.length);
     }
 
-    // Đảm bảo là MẢNG
     if (!Array.isArray(items)) items = [];
 
     res.json({ items, total, page, pageSize });
@@ -1190,9 +1270,5 @@ admin.get("/campaigns", requireAuth, requireRole("admin"), async (req, res) => {
     res.status(500).json({ message: "Không tải được danh sách chiến dịch." });
   }
 });
-
-
-
-
 
 export default admin;

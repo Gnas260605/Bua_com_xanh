@@ -1,4 +1,4 @@
-﻿// backend/src/routes/campaigns.js  (public routes for FE) — synced with donations
+﻿// backend/src/routes/campaigns.js (public routes for FE) — synced with donations
 import { Router } from "express";
 import "dotenv/config";
 
@@ -61,6 +61,9 @@ function normalizeTags(raw) {
   }
 }
 
+/** Giá 1 phần ăn: đọc từ .env, mặc định 10,000 VND */
+const MEAL_PRICE_VND = toNum(process.env.MEAL_PRICE_VND, 10000);
+
 /** Subquery/expr khác nhau giữa MySQL & SQLite */
 const AGG = {
   // 2 cột tính theo donations thành công
@@ -81,9 +84,14 @@ function mapCampaignRow(r) {
   const type = meta?.type || r.type || "money";
   const cover_url = r.cover || r.cover_url || "";
 
-  // Ghi đè raised/supporters bằng giá trị tính toán (nếu có)
+  // Giá trị tính toán (ưu tiên subquery; nếu không có thì fallback về cột có sẵn)
   const raisedCalc = toNum(r.raised_calc ?? r.raised, 0);
   const supportersCalc = toNum(r.supporters_calc ?? r.supporters, 0);
+
+  // ===== Quy đổi thành số bữa ăn =====
+  // Ưu tiên giá trong meta nếu có; nếu không dùng MEAL_PRICE_VND (env)
+  const mealPrice = toNum(meta?.meal?.price, MEAL_PRICE_VND);
+  const mealReceivedAuto = Math.floor(raisedCalc / (mealPrice > 0 ? mealPrice : MEAL_PRICE_VND));
 
   return {
     ...r,
@@ -95,9 +103,11 @@ function mapCampaignRow(r) {
     tags: normalizeTags(r.tags),
     meta,
     type,
+    // Thông tin meal hiển thị nhất quán
     meal_unit: meta?.meal?.unit || "phần",
     meal_target_qty: toNum(meta?.meal?.target_qty, 0),
-    meal_received_qty: toNum(meta?.meal?.received_qty, 0),
+    // ✅ LUÔN tự động tính theo donations (không cần cập nhật thủ công)
+    meal_received_qty: mealReceivedAuto,
     start_at: meta?.start_at || null,
     end_at: meta?.end_at || null,
     payment: meta?.payment || null,
@@ -143,7 +153,7 @@ router.get("/", async (req, res) => {
       SELECT
         c.id, c.title, c.description, c.location, c.goal,
         c.cover, c.tags, c.status, c.created_at, c.updated_at, c.deadline,
-        ${AGG.raisedCol}    AS raised_calc,
+        ${AGG.raisedCol}     AS raised_calc,
         ${AGG.supportersCol} AS supporters_calc
       FROM campaigns c
       ${whereSQL}
@@ -202,7 +212,7 @@ router.get("/:id", async (req, res) => {
       SELECT
         c.id, c.title, c.description, c.location, c.goal,
         c.cover, c.tags, c.status, c.created_at, c.updated_at, c.deadline,
-        ${AGG.raisedCol}    AS raised_calc,
+        ${AGG.raisedCol}     AS raised_calc,
         ${AGG.supportersCol} AS supporters_calc
       FROM campaigns c
       WHERE c.id=?
@@ -259,7 +269,7 @@ router.get("/:id/reports", async (req, res) => {
       SELECT
         c.id, c.title, c.description, c.location, c.goal,
         c.cover, c.tags, c.status, c.created_at, c.updated_at, c.deadline,
-        ${AGG.raisedCol}    AS raised_calc,
+        ${AGG.raisedCol}     AS raised_calc,
         ${AGG.supportersCol} AS supporters_calc
       FROM campaigns c
       WHERE c.id=?
